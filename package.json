@@ -1,0 +1,56 @@
+{
+  "name": "rest-ap",
+  "version": "0.1.0-beta",
+  "description": "REST Agent Protocol - A minimal protocol for building AI agents with REST semantics",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/server.ts",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:server": "./test-server.sh",
+    "test:server:quick": "./test-server.sh --quick",
+    "demo:discovery": "node examples/discovery.js",
+    "demo:talk": "node examples/talk.js",
+    "demo:capabilities": "node examples/capabilities.js",
+    "demo:verification": "node examples/verification.js",
+    "start": "node examples/demo.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nxt3d/rest-ap.git"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "protocol",
+    "rest",
+    "api",
+    "llm",
+    "tool-calling"
+  ],
+  "author": "Prem Makeig <prem@nxt3d.xyz>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/nxt3d/rest-ap/issues"
+  },
+  "homepage": "https://github.com/nxt3d/rest-ap#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "express": "^4.18.0",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/express": "^4.17.0",
+    "@types/cors": "^2.8.0",
+    "typescript": "^5.0.0",
+    "tsx": "^4.0.0",
+    "vitest": "^1.0.0",
+    "@types/supertest": "^6.0.0",
+    "supertest": "^6.0.0"
+  }
+}

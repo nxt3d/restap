@@ -1,0 +1,30 @@
+{
+  "name": "@restap/text-tools",
+  "version": "1.0.0",
+  "description": "Claude Code plugin for text processing with REST-AP agents",
+  "main": "lib/client.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Run tests with Claude Code: claude --plugin-dir ./example-plugin\""
+  },
+  "keywords": [
+    "claude",
+    "plugin",
+    "rest-ap",
+    "text-processing",
+    "ai-agent"
+  ],
+  "author": "REST-AP Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/restap/text-tools.git"
+  },
+  "homepage": "https://github.com/restap/text-tools#readme",
+  "bugs": {
+    "url": "https://github.com/restap/text-tools/issues"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
