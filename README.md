@@ -44,17 +44,34 @@ REST-AP defines how AI agents expose their capabilities through standard HTTP en
 
 1. **Discovery**. Agents publish their capabilities via `/.well-known/restap.json` for clients to discover.
 
-2. **Talk**. Agents implement `POST /talk` for conversational interaction and capability guidance.
+2. **Talk**. Agents implement `POST /talk` as a one-directional entrypoint where the agent receives queries and triggers an LLM response. The client sends a message, and the agent processes it and responds.
 
 3. **Execute**. Agents implement capability endpoints that clients can call directly.
 
-4. **Monitor**. Agents implement `GET /news` for clients to check on long-running operations.
+4. **News**. Agents implement `/news` as a single bidirectional endpoint for reading and writing updates. Unlike `/talk`, `/news` communications **never trigger agent processing** - it's purely passive storage and retrieval.
 
 ### **Minimal Endpoint Set**
 
-* `GET /.well-known/restap.json`
-* `POST /talk`
-* `GET /news`
+* `GET /.well-known/restap.json` - Discovery
+* `POST /talk` - One-directional entrypoint (client → agent, triggers LLM response)
+* `/news` - Single bidirectional endpoint:
+  * `GET /news` - Read updates (no processing)
+  * `POST /news` - Write messages/replies (no processing)
+
+### **Key Difference: /talk vs /news**
+
+The critical distinctions between `/talk` and `/news`:
+
+| Endpoint | Direction | Triggers Processing? | Use Case |
+|----------|-----------|-------------------|----------|
+| `POST /talk` | **One-directional** (client → agent) | ✅ **Yes** - Agent receives query and triggers LLM response | Send tasks/questions that need agent work |
+| `GET /news` | **Bidirectional** (read) | ❌ **No** - Just retrieves stored data | Poll for updates, read what's already happened |
+| `POST /news` | **Bidirectional** (write) | ❌ **No** - Just stores data, no processing | Send replies/messages without triggering work |
+
+**Key Points:**
+- **`POST /talk`**: One-directional - client sends query, agent processes it and responds with LLM output
+- **`/news`**: Bidirectional - can read (GET) and write (POST), but never triggers processing
+- **Why this matters:** `POST /news` prevents infinite loops. When Agent A sends a reply to Agent B via `POST /news`, Agent B doesn't process it - it's just stored. This allows agents to communicate without triggering endless processing cycles.
 
 ## **The Catalog Document**
 
@@ -67,6 +84,27 @@ REST-AP defines how AI agents expose their capabilities through standard HTTP en
     "contact": "agent@example.com"
   },
   "capabilities": [
+    {
+      "id": "talk",
+      "title": "Talk to agent",
+      "method": "POST",
+      "endpoint": "/talk",
+      "description": "Send messages to the agent (triggers LLM processing)"
+    },
+    {
+      "id": "news",
+      "title": "Poll for updates",
+      "method": "GET",
+      "endpoint": "/news",
+      "description": "Poll for task completion and updates (no LLM processing)"
+    },
+    {
+      "id": "news_receive",
+      "title": "Receive replies",
+      "method": "POST",
+      "endpoint": "/news",
+      "description": "Receive messages/replies from other agents (no LLM processing)"
+    },
     {
       "id": "text.echo",
       "title": "Echo text back",
@@ -221,17 +259,86 @@ The packages section is **not strictly defined** - agents can use any package me
    {"job_id": "job_1", "original_text": "Hello World", "echoed_text": "Hello World"}
    ```
 
-4. **Check for updates**
+4. **Agent-to-Agent Communication Flow**
 
-   `GET /news`
-
-   Returns any completed jobs or status updates.
-
-   Response:
-
+   **Step 1: Agent 1 sends task to Agent 2**
+   
+   `POST /talk` (Agent 1 → Agent 2) - **One-directional entrypoint**
+   
    ```json
-   {"items": [{"type": "job.completed", "job_id": "job_1"}]}
+   {"message": "What are best practices for buttons?"}
    ```
+   
+   Response (Agent 2 receives query, triggers LLM processing, responds):
+   
+   ```json
+   {
+     "query_id": "query_123",
+     "status": "processing"
+   }
+   ```
+   
+   Note: `/talk` is one-directional - the client sends a query, and the agent processes it and responds with LLM output.
+
+   **Step 2: Agent 2 sends reply to Agent 1**
+   
+   `POST /news` (Agent 2 → Agent 1)
+   
+   ```json
+   {
+     "type": "reply",
+     "from": "agent-b",
+     "in_reply_to": "query_123",
+     "message": "Best practices: Use clear labels, proper contrast, adequate spacing."
+   }
+   ```
+   
+   Response (Agent 1 receives this, **no processing triggered**):
+   
+   ```json
+   {
+     "status": "received",
+     "news_id": "news_1",
+     "message": "Message stored successfully"
+   }
+   ```
+
+   **Step 3: Agent 3 checks what Agent 2 has been working on**
+   
+   `GET /news` (Agent 3 → Agent 2)
+   
+   Returns any completed jobs or status updates:
+   
+   ```json
+   {
+     "items": [
+       {
+         "type": "job.completed",
+         "timestamp": 1703012345000,
+         "job_id": "job_1",
+         "query_id": "job_1",
+         "data": {
+           "query_id": "job_1",
+           "result": {"original_text": "Hello World", "echoed_text": "Hello World"}
+         }
+       },
+       {
+         "type": "reply",
+         "timestamp": 1703012400000,
+         "from": "agent-b",
+         "in_reply_to": "query_123",
+         "message": "Best practices: Use clear labels..."
+       }
+     ],
+     "timestamp": 1703012350000
+   }
+   ```
+
+   **Key Points:**
+   - `POST /talk` is **one-directional** - client sends query, agent receives it and triggers LLM response
+   - `POST /news` does NOT trigger processing (Agent 1 just stores the reply)
+   - `GET /news` does NOT trigger processing (Agent 3 just reads what's stored)
+   - `/news` is a **bidirectional** endpoint (can read and write), but never triggers work
 
 7. **Client local function or CLI command acme news-updated()** The client may expose:
 
@@ -246,24 +353,63 @@ The packages section is **not strictly defined** - agents can use any package me
 REST-AP provides a standard way for AI agents to expose their capabilities:
 
 * **Publish** capabilities automatically via `/.well-known/restap.json`
-* **Enable conversations** through the `/talk` endpoint
+* **Enable conversations** through the `/talk` endpoint (one-directional: client sends query, agent responds with LLM output)
 * **Handle task execution** via capability-specific endpoints
-* **Report progress** on operations via the `/news` endpoint
+* **Report progress** on operations via the `/news` endpoint (bidirectional: can read and write, but never triggers processing)
 
 Unlike plain REST APIs, REST-AP standardizes how AI agents present themselves to the world.
 
-## **Simple Polling**
+## **The /news Endpoint: Single Entrypoint for Reading and Writing**
 
-Instead of complex push notifications, REST-AP uses simple polling with the `/news` endpoint. Clients can check for updates without maintaining persistent connections.
+The `/news` endpoint is a **single bidirectional entrypoint** that handles both reading and writing, with the critical property that **it never triggers agent processing**.
+
+### **Reading from /news (GET)**
+
+**GET /news** - Poll for updates (no processing)
+- Read what's already happened - completed tasks, replies, notifications
+- Supports `since` parameter: `GET /news?since=1703012345000` to get only new items
+- Free to poll frequently (no LLM inference costs)
+- Example: Agent 3 wants to know what Agent 2 has been working on → `GET /news` Agent 2
+
+### **Writing to /news (POST)**
+
+**POST /news** - Write messages/replies (no processing)
+- Store messages/replies without triggering any agent work
+- Used for sending replies back to the original sender
+- Prevents infinite loops (unlike `/talk` which triggers processing)
+- Example: Agent 2 sends reply to Agent 1 → `POST /news` Agent 1
+
+### **Complete Agent Communication Flow**
+
+```
+Agent 1 → POST /talk → Agent 2
+          (Agent 2 processes the request)
+
+Agent 2 → POST /news → Agent 1  
+          (Agent 1 receives reply, no processing triggered)
+
+Agent 3 → GET /news → Agent 2
+          (Agent 3 reads what Agent 2 has been working on)
+```
+
+**The Flow:**
+1. **Agent 1 sends task**: `POST /talk` to Agent 2 → Agent 2 receives query, triggers LLM response (one-directional)
+2. **Agent 2 sends reply**: `POST /news` to Agent 1 → Just stored, no processing (bidirectional write)
+3. **Agent 3 checks status**: `GET /news` from Agent 2 → Reads updates, no processing (bidirectional read)
+
+This design ensures that:
+- `/talk` is **one-directional** - client sends query, agent responds with LLM output
+- `/news` is **bidirectional** - can read (GET) and write (POST), but never triggers agent work
+- `/news` is purely passive - it's a communication channel that doesn't trigger any agent processing, making it safe for bidirectional communication without infinite loops
 
 ## **For AI Agents**
 
 REST-AP enables AI agents to expose their capabilities in a standardized way:
 
 1. **Publish capabilities** via `/.well-known/restap.json` for easy discovery
-2. **Handle conversations** through the `/talk` endpoint
+2. **Handle conversations** through the `/talk` endpoint (one-directional: receive queries, trigger LLM responses)
 3. **Execute tasks** via capability-specific endpoints
-4. **Report progress** on long-running operations via `/news`
+4. **Report progress** on long-running operations via `/news` (bidirectional: can read and write, never triggers processing)
 
 Any REST-AP compliant agent can be immediately discovered and used by other systems.
 

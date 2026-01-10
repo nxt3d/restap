@@ -59,14 +59,29 @@ export interface TalkResponse {
 
 export interface NewsResponse {
   items: NewsItem[];
+  timestamp?: number;
 }
 
 export interface NewsItem {
   type: string;
+  timestamp?: number;
   job_id?: string;
+  query_id?: string;
   message?: string;
-  timestamp?: string;
-  next_call?: string;
+  data?: {
+    query_id?: string;
+    result?: any;
+  };
+  from?: string;
+  in_reply_to?: string;
+}
+
+export interface NewsPostRequest {
+  type: string;
+  from?: string;
+  in_reply_to?: string;
+  message?: string;
+  data?: any;
 }
 
 export interface JobStatus {

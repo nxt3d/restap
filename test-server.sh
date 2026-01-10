@@ -158,11 +158,20 @@ test_capabilities() {
 test_news() {
     print_header "Testing News Endpoint"
 
-    run_test "News Feed" \
+    run_test "News Feed (GET)" \
         "curl -s '$SERVER_URL/news'"
 
     run_test "News Structure" \
         "curl -s '$SERVER_URL/news' | jq -e '.items and (.items | type == \"array\")'"
+
+    run_test "News with since parameter" \
+        "curl -s '$SERVER_URL/news?since=0' | jq -e '.items'"
+
+    run_test "News Receive (POST) - Valid Request" \
+        "curl -s -X POST -H 'Content-Type: application/json' -d '{\"type\":\"reply\",\"from\":\"agent-b\",\"in_reply_to\":\"query_123\",\"message\":\"Test reply\"}' '$SERVER_URL/news'"
+
+    run_test "News Receive (POST) - Missing Type Error" \
+        "curl -s -X POST -H 'Content-Type: application/json' -d '{\"from\":\"agent-b\"}' '$SERVER_URL/news' | jq -e '.error'"
 }
 
 # Run comprehensive capability test

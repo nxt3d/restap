@@ -132,13 +132,77 @@ describe('REST-AP Server', () => {
   });
 
   describe('News Endpoint', () => {
-    it('should return news items', async () => {
-      const response = await request(app)
-        .get('/news')
-        .expect(200);
+    describe('GET /news', () => {
+      it('should return news items', async () => {
+        const response = await request(app)
+          .get('/news')
+          .expect(200);
 
-      expect(response.body.items).toBeDefined();
-      expect(Array.isArray(response.body.items)).toBe(true);
+        expect(response.body.items).toBeDefined();
+        expect(Array.isArray(response.body.items)).toBe(true);
+      });
+
+      it('should support since parameter', async () => {
+        const response = await request(app)
+          .get('/news?since=0')
+          .expect(200);
+
+        expect(response.body.items).toBeDefined();
+        expect(response.body.timestamp).toBeDefined();
+      });
+    });
+
+    describe('POST /news', () => {
+      it('should receive and store messages', async () => {
+        const response = await request(app)
+          .post('/news')
+          .send({
+            type: "reply",
+            from: "agent-b",
+            in_reply_to: "query_123",
+            message: "Here's my response"
+          })
+          .expect(200);
+
+        expect(response.body.status).toBe('received');
+        expect(response.body.news_id).toBeDefined();
+      });
+
+      it('should return error for missing type', async () => {
+        const response = await request(app)
+          .post('/news')
+          .send({
+            from: "agent-b",
+            message: "Test"
+          })
+          .expect(400);
+
+        expect(response.body.error).toContain("Missing 'type' field");
+      });
+
+      it('should store received messages in news feed', async () => {
+        // Send a message via POST /news
+        await request(app)
+          .post('/news')
+          .send({
+            type: "reply",
+            from: "agent-b",
+            in_reply_to: "query_123",
+            message: "Test reply"
+          })
+          .expect(200);
+
+        // Check it appears in GET /news
+        const newsResponse = await request(app)
+          .get('/news')
+          .expect(200);
+
+        const replyItem = newsResponse.body.items.find(
+          (item: any) => item.type === 'reply' && item.in_reply_to === 'query_123'
+        );
+        expect(replyItem).toBeDefined();
+        expect(replyItem.from).toBe('agent-b');
+      });
     });
   });
 

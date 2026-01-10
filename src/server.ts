@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import { RestapCatalog, TalkRequest, TalkResponse, NewsResponse, Capability } from './types.js';
+import { RestapCatalog, TalkRequest, TalkResponse, NewsResponse, NewsPostRequest, NewsItem, Capability } from './types.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -39,6 +39,27 @@ const catalog: RestapCatalog = {
     }
   ],
   capabilities: [
+    {
+      id: "talk",
+      title: "Talk to agent",
+      method: "POST",
+      endpoint: "/talk",
+      description: "Send messages to the agent (triggers LLM processing)"
+    },
+    {
+      id: "news",
+      title: "Poll for updates",
+      method: "GET",
+      endpoint: "/news",
+      description: "Poll for task completion and updates (no LLM processing)"
+    },
+    {
+      id: "news_receive",
+      title: "Receive replies",
+      method: "POST",
+      endpoint: "/news",
+      description: "Receive messages/replies from other agents (no LLM processing)"
+    },
     {
       id: "text.echo",
       title: "Echo text back",
@@ -157,18 +178,73 @@ app.post('/talk', (req, res) => {
   res.json(response);
 });
 
-// 3. News endpoint
+// 3. News endpoints (bidirectional)
+// GET /news - Poll for updates
 app.get('/news', (req, res) => {
+  const since = parseInt(req.query.since as string) || 0;
+  const now = Date.now();
+  
   const news: NewsResponse = {
-    items: Array.from(jobs.entries()).map(([jobId, job]) => ({
-      type: job.status === 'completed' ? 'job.completed' : 'job.updated',
-      job_id: jobId,
-      message: `Job ${jobId} is ${job.status}`,
-      timestamp: new Date().toISOString()
-    }))
+    items: Array.from(jobs.entries())
+      .map(([jobId, job]) => {
+        // Handle news items received via POST /news
+        if (job.type === 'news.received' && job.result) {
+          return job.result as NewsItem;
+        }
+        // Handle regular job updates
+        return {
+          type: job.status === 'completed' ? 'job.completed' : 'job.updated',
+          timestamp: job.timestamp || now,
+          job_id: jobId,
+          query_id: jobId,
+          message: `Job ${jobId} is ${job.status}`,
+          data: job.result ? {
+            query_id: jobId,
+            result: job.result
+          } : undefined
+        } as NewsItem;
+      })
+      .filter(item => (item.timestamp || 0) > since),
+    timestamp: now
   };
 
   res.json(news);
+});
+
+// POST /news - Receive replies/messages (passive storage, no processing)
+app.post('/news', (req, res) => {
+  const { type, from, in_reply_to, message, data }: NewsPostRequest = req.body;
+
+  if (!type) {
+    return res.status(400).json({
+      error: "Missing 'type' field in request body"
+    });
+  }
+
+  // Store the incoming message/reply
+  const newsId = `news_${++jobCounter}`;
+  const newsItem: NewsItem = {
+    type,
+    timestamp: Date.now(),
+    from,
+    in_reply_to,
+    message,
+    data
+  };
+
+  // Store in jobs map for retrieval via GET /news
+  jobs.set(newsId, {
+    status: 'completed',
+    result: newsItem,
+    type: 'news.received',
+    timestamp: Date.now()
+  });
+
+  res.status(200).json({
+    status: 'received',
+    news_id: newsId,
+    message: 'Message stored successfully'
+  });
 });
 
 // 4. Capability endpoints
