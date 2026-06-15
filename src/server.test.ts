@@ -300,6 +300,61 @@ describe('REST-AP Server', () => {
     });
   });
 
+  describe('Talk Sessions', () => {
+    it('(a) POST /talk with no session_id returns a minted session_id in the JSON response', async () => {
+      const response = await request(app)
+        .post('/talk')
+        .set('Accept', 'application/json')
+        .send({ message: 'Hello!' })
+        .expect(200);
+
+      expect(typeof response.body.session_id).toBe('string');
+      expect(response.body.session_id.length).toBeGreaterThan(0);
+    });
+
+    it('(b) POST /talk echoes back a provided session_id', async () => {
+      const provided = 'sess_client_supplied_123';
+      const response = await request(app)
+        .post('/talk')
+        .set('Accept', 'application/json')
+        .send({ message: 'Hello!', session_id: provided })
+        .expect(200);
+
+      expect(response.body.session_id).toBe(provided);
+    });
+
+    it('(c) SSE stream carries session_id on message.start and done', async () => {
+      const provided = 'sess_stream_456';
+      const response = await request(app)
+        .post('/talk')
+        .set('Accept', 'text/event-stream')
+        .send({ message: 'Hello!', session_id: provided })
+        .expect(200)
+        .expect('Content-Type', /text\/event-stream/);
+
+      const body = response.text;
+
+      const startData = body.match(/event: message\.start\ndata: (.*)\n/);
+      expect(startData).not.toBeNull();
+      expect(JSON.parse(startData![1]).session_id).toBe(provided);
+
+      const doneData = body.match(/event: done\ndata: (.*)\n/);
+      expect(doneData).not.toBeNull();
+      expect(JSON.parse(doneData![1]).session_id).toBe(provided);
+    });
+
+    it('(d) catalog advertises talk.sessions.supported', async () => {
+      const response = await request(app)
+        .get('/.well-known/restap.json')
+        .expect(200);
+
+      const catalog: RestapCatalog = response.body;
+      const talk = catalog.capabilities.find(c => c.id === 'talk');
+      expect(talk).toBeDefined();
+      expect(talk!.sessions?.supported).toBe(true);
+    });
+  });
+
   describe('Health Endpoint', () => {
     it('should return healthy status', async () => {
       const response = await request(app)

@@ -26,6 +26,8 @@ REST-AP is a protocol for AI agents to expose their capabilities via standard HT
 
 * **Defining tool invocation, long-running task orchestration, async job handling, or agent-to-agent delegation.** These belong to MCP, A2A, or other protocols an agent advertises. REST-AP stays minimal and focused: it standardizes discovery, a one-directional `/talk` entrypoint, and a passive `/news` channel. The optional streaming `tool.*` and `artifact` events (see below) are presentational hints for rendering progress, **not** a tool-invocation protocol.
 
+* **Defining session management.** The optional `session_id` (see **Sessions (optional)**) is just an opaque continuity token. REST-AP does not define session create/delete endpoints, a session-management API, mandatory persistence/TTL, or auth-bound sessions — those would make it stateful orchestration, which is out of scope.
+
 ## **Key Concepts and Terms**
 
 **Capabilities as Endpoints**. In REST‑AP, a capability maps directly to a concrete HTTP endpoint. Each capability specifies the HTTP method, endpoint path, input/output schemas, and other metadata needed for proper API interaction.
@@ -169,7 +171,7 @@ Cache-Control: no-cache
 Connection: keep-alive
 
 event: message.start
-data: {"event":"message.start","id":"msg_42"}
+data: {"event":"message.start","id":"msg_42","session_id":"sess_7"}
 
 event: message.delta
 data: {"event":"message.delta","id":"msg_42","text":"Hello "}
@@ -181,11 +183,37 @@ event: message.end
 data: {"event":"message.end","id":"msg_42"}
 
 event: done
-data: {"event":"done"}
+data: {"event":"done","session_id":"sess_7"}
 
 ```
 
-The client concatenates the `text` fields from each `message.delta` to assemble the full reply (`"Hello there!"`), then stops on `done`.
+The client concatenates the `text` fields from each `message.delta` to assemble the full reply (`"Hello there!"`), then stops on `done`. The `session_id` on `message.start`/`done` lets the client continue the thread on its next turn (see **Sessions (optional)**).
+
+## **Sessions (optional)**
+
+`session_id` is an **opaque** string that provides conversation continuity on `/talk`. It is the minimal mechanism for multi-turn threads, and nothing more.
+
+**How it works:**
+
+* A client MAY include `session_id` in `POST /talk` to continue an existing thread.
+* If the client omits it, the server MAY mint one. When it does, it MUST return the `session_id` so the client can continue:
+  * in the JSON `TalkResponse` body (`{"reply": "...", "session_id": "..."}`), and
+  * in the SSE `message.start` event and the `done` event when streaming.
+* The client echoes the returned `session_id` back on its next `POST /talk` turn.
+
+**Servers MAY be stateless.** A server that ignores `session_id` and treats every `/talk` as a fresh exchange remains **fully compliant** — continuity simply isn't guaranteed. REST-AP mandates no server-side store, no lifecycle, no expiry, and no session API.
+
+**`session_id` is NOT authentication.** It is a correlation token, not access control. If a server uses it to gate conversation history, the token MUST be unguessable. Authentication and authorization remain a separate concern (see **Security**).
+
+**Relation to `/news`:** sessions are a `/talk` concept. A `/news` item MAY carry an optional `session_id` purely to correlate it with a thread, but `/news` semantics are **unchanged** — it stays passive and never triggers processing. Streaming and processing are never added to `/news`.
+
+### **What REST-AP does NOT define (sessions)**
+
+To stay minimal, REST-AP deliberately leaves these out of scope (they would turn sessions into stateful orchestration — see **Non‑Goals**):
+
+* No session create/delete endpoints and no session-management API.
+* No required persistence, store, or TTL/expiry.
+* No auth-bound sessions; `session_id` is not a credential.
 
 ## **The Catalog Document**
 
@@ -209,6 +237,9 @@ The client concatenates the `text` fields from each `message.delta` to assemble 
         "supported": true,
         "transport": "sse",
         "events": ["message.start", "message.delta", "message.end", "error", "done"]
+      },
+      "sessions": {
+        "supported": true
       }
     },
     {
@@ -320,6 +351,7 @@ Each capability in the catalog can include the following standard REST API field
 * **content_types**: Array of accepted content types (e.g., ["application/json"])
 * **output_formats**: Array of response formats the capability can produce (e.g., `["application/json", "text/event-stream"]`). On `talk`, listing `text/event-stream` signals that streaming is available via content negotiation.
 * **streaming**: For `talk`, an object advertising optional SSE streaming: `{ "supported": true, "transport": "sse", "events": ["message.start", "message.delta", "message.end", "error", "done"] }`. When `supported` is `false`, the server always returns `application/json`. The `events` array lists the SSE events the server emits.
+* **sessions**: For `talk`, an object advertising optional session continuity: `{ "supported": true }`. When `supported` is `true`, the server mints and returns a `session_id` that clients echo back to continue a thread (see **Sessions (optional)**). When `false`, the server is stateless and ignores `session_id`.
 
 The input/output schemas use standard JSON Schema format to provide precise API contracts for clients.
 
@@ -488,6 +520,7 @@ The packages section is **not strictly defined** - agents can use any package me
 * Use HTTPS for all requests
 * Implement appropriate rate limiting
 * Validate input data on both client and server
+* `session_id` is a correlation token, not authentication. It is not access control; if it gates conversation history it MUST be unguessable, and auth/authorization remains a separate concern (see **Sessions (optional)**).
 
 ## **Why REST-AP?**
 

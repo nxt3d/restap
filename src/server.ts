@@ -94,6 +94,9 @@ const catalog: RestapCatalog = {
         supported: STREAMING_ENABLED,
         transport: "sse",
         events: TALK_STREAM_EVENTS
+      },
+      sessions: {
+        supported: true
       }
     },
     {
@@ -206,6 +209,11 @@ app.post('/talk', (req, res) => {
   const wantsStream = explicitlyAccepts(acceptedTypes, 'text/event-stream');
   const wantsJson = accepts(acceptedTypes, 'application/json');
 
+  // Sessions (optional): continue the thread when the client supplies an opaque
+  // session_id, otherwise mint one and return it so the client can continue.
+  // This demo is stateless beyond echoing the token. session_id is NOT auth.
+  const sessionId = session_id || `sess_${++jobCounter}`;
+
   let response: TalkResponse;
 
   // Simple conversation logic
@@ -252,7 +260,7 @@ app.post('/talk', (req, res) => {
     res.flushHeaders?.();
 
     const messageId = `msg_${++jobCounter}`;
-    sendSseEvent(res, { event: 'message.start', id: messageId, session_id });
+    sendSseEvent(res, { event: 'message.start', id: messageId, session_id: sessionId });
 
     // Emit the reply as word-level deltas to demonstrate incremental delivery.
     const chunks = response.reply.match(/\S+\s*/g) || [response.reply];
@@ -261,7 +269,7 @@ app.post('/talk', (req, res) => {
     }
 
     sendSseEvent(res, { event: 'message.end', id: messageId });
-    sendSseEvent(res, { event: 'done' });
+    sendSseEvent(res, { event: 'done', session_id: sessionId });
     return res.end();
   }
 
@@ -274,6 +282,8 @@ app.post('/talk', (req, res) => {
     });
   }
 
+  // Return the session_id so the client can continue the thread next turn.
+  response.session_id = sessionId;
   res.json(response);
 });
 
@@ -312,7 +322,7 @@ app.get('/news', (req, res) => {
 
 // POST /news - Receive replies/messages (passive storage, no processing)
 app.post('/news', (req, res) => {
-  const { type, from, in_reply_to, message, data }: NewsPostRequest = req.body;
+  const { type, from, in_reply_to, message, data, session_id }: NewsPostRequest = req.body;
 
   if (!type) {
     return res.status(400).json({
@@ -320,7 +330,8 @@ app.post('/news', (req, res) => {
     });
   }
 
-  // Store the incoming message/reply
+  // Store the incoming message/reply. session_id (if present) is kept purely as
+  // a correlation hint; storing it does NOT trigger any processing.
   const newsId = `news_${++jobCounter}`;
   const newsItem: NewsItem = {
     type,
@@ -328,7 +339,8 @@ app.post('/news', (req, res) => {
     from,
     in_reply_to,
     message,
-    data
+    data,
+    session_id
   };
 
   // Store in jobs map for retrieval via GET /news

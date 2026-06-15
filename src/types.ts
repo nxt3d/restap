@@ -50,6 +50,7 @@ export interface Capability {
   content_types?: string[]; // Accepted content types
   output_formats?: string[]; // Response formats the capability can produce (e.g. ["application/json", "text/event-stream"])
   streaming?: StreamingAdvert; // Optional: advertise SSE streaming support for this capability
+  sessions?: SessionsAdvert; // Optional: advertise session-continuity support (currently only /talk)
   parameters?: Parameter[]; // Query/path parameters
   pricing?: {
     free_calls?: number;
@@ -65,6 +66,13 @@ export interface StreamingAdvert {
   events: string[];
 }
 
+// Advertises optional session continuity for a capability (currently only /talk).
+// A server with supported:false is stateless and ignores session_id; continuity
+// is simply not guaranteed. There is no session-management API.
+export interface SessionsAdvert {
+  supported: boolean;
+}
+
 export interface Parameter {
   name: string;
   type: string;
@@ -75,11 +83,16 @@ export interface Parameter {
 
 export interface TalkRequest {
   message: string;
+  // Opaque conversation-continuity token. A client MAY include it to continue
+  // a thread. If omitted, the server MAY mint one and return it. Not auth.
   session_id?: string;
 }
 
 export interface TalkResponse {
   reply: string;
+  // The session_id the client should echo on the next turn to continue the
+  // thread. A server that mints sessions MUST return it here (and, when
+  // streaming, in message.start and done).
   session_id?: string;
   suggested_actions?: string[];
 }
@@ -125,6 +138,7 @@ export interface TalkStreamError {
 
 export interface TalkStreamDone {
   event: 'done'; // terminal event; stream ends after this
+  session_id?: string; // included so the client can continue the thread
 }
 
 // --- Optional events (presentational hints only) ---
@@ -191,6 +205,9 @@ export interface NewsItem {
   };
   from?: string;
   in_reply_to?: string;
+  // Optional correlation token tying this item to a /talk session. Purely a
+  // correlation hint; /news remains passive and never triggers processing.
+  session_id?: string;
 }
 
 export interface NewsPostRequest {
@@ -199,6 +216,9 @@ export interface NewsPostRequest {
   in_reply_to?: string;
   message?: string;
   data?: any;
+  // Optional correlation token tying this message to a /talk session.
+  // Does not change /news behavior: still passive, never triggers processing.
+  session_id?: string;
 }
 
 export interface JobStatus {
