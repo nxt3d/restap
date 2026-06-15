@@ -1,7 +1,19 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import app from './server.js';
 import { RestapCatalog } from './types.js';
+
+// Load a fresh server instance with a specific RESTAP_STREAMING value.
+// The streaming flag is read once at module load, so toggling it requires
+// resetting the module registry and re-importing.
+async function loadAppWithStreaming(enabled: boolean) {
+  vi.resetModules();
+  const prev = process.env.RESTAP_STREAMING;
+  process.env.RESTAP_STREAMING = enabled ? 'on' : 'off';
+  const mod = await import('./server.js');
+  process.env.RESTAP_STREAMING = prev;
+  return mod.default;
+}
 
 describe('REST-AP Server', () => {
   let server: any;
@@ -24,8 +36,8 @@ describe('REST-AP Server', () => {
       const catalog: RestapCatalog = response.body;
 
       expect(catalog.restap_version).toBe('1.0');
-      expect(catalog.provider).toBeDefined();
-      expect(catalog.provider.name).toBe('Simple REST-AP Demo Server');
+      expect(catalog.agent).toBeDefined();
+      expect(catalog.agent.name).toBe('Simple REST-AP Demo Agent');
       expect(catalog.capabilities).toBeDefined();
       expect(Array.isArray(catalog.capabilities)).toBe(true);
       expect(catalog.capabilities.length).toBeGreaterThan(0);
@@ -66,7 +78,7 @@ describe('REST-AP Server', () => {
         .send({ message: 'What capabilities do you have?' })
         .expect(200);
 
-      expect(response.body.reply).toContain('capabilities');
+      expect(response.body.reply).toContain('I can help with');
       expect(response.body.suggested_actions).toBeDefined();
     });
 
@@ -203,6 +215,88 @@ describe('REST-AP Server', () => {
         expect(replyItem).toBeDefined();
         expect(replyItem.from).toBe('agent-b');
       });
+    });
+  });
+
+  describe('Talk Streaming (SSE)', () => {
+    it('(a) Accept: application/json returns a complete JSON response', async () => {
+      const response = await request(app)
+        .post('/talk')
+        .set('Accept', 'application/json')
+        .send({ message: 'Hello!' })
+        .expect(200)
+        .expect('Content-Type', /application\/json/);
+
+      expect(response.body.reply).toContain('Hello');
+      expect(Array.isArray(response.body.suggested_actions)).toBe(true);
+    });
+
+    it('(b) Accept: text/event-stream returns an SSE stream with the required event sequence', async () => {
+      const response = await request(app)
+        .post('/talk')
+        .set('Accept', 'text/event-stream')
+        .send({ message: 'Hello!' })
+        .expect(200)
+        .expect('Content-Type', /text\/event-stream/);
+
+      const body = response.text;
+      expect(body).toContain('event: message.start');
+      expect(body).toContain('event: message.delta');
+      expect(body).toContain('event: message.end');
+      expect(body).toContain('event: done');
+
+      // Required order: start before delta before end before done.
+      const iStart = body.indexOf('event: message.start');
+      const iDelta = body.indexOf('event: message.delta');
+      const iEnd = body.indexOf('event: message.end');
+      const iDone = body.indexOf('event: done');
+      expect(iStart).toBeLessThan(iDelta);
+      expect(iDelta).toBeLessThan(iEnd);
+      expect(iEnd).toBeLessThan(iDone);
+
+      // Each frame carries a JSON data line that parses and matches its event type.
+      const startData = body.match(/event: message\.start\ndata: (.*)\n/);
+      expect(startData).not.toBeNull();
+      const startPayload = JSON.parse(startData![1]);
+      expect(startPayload.event).toBe('message.start');
+      expect(startPayload.id).toBeDefined();
+    });
+
+    it('(c) Accept: text/event-stream alone with streaming disabled returns 406', async () => {
+      const noStreamApp = await loadAppWithStreaming(false);
+      const response = await request(noStreamApp)
+        .post('/talk')
+        .set('Accept', 'text/event-stream')
+        .send({ message: 'Hello!' })
+        .expect(406);
+
+      expect(response.body.error).toContain('Not Acceptable');
+    });
+
+    it('(d) Accept: text/event-stream, application/json with streaming disabled falls back to JSON', async () => {
+      const noStreamApp = await loadAppWithStreaming(false);
+      const response = await request(noStreamApp)
+        .post('/talk')
+        .set('Accept', 'text/event-stream, application/json')
+        .send({ message: 'Hello!' })
+        .expect(200)
+        .expect('Content-Type', /application\/json/);
+
+      expect(response.body.reply).toContain('Hello');
+    });
+
+    it('catalog advertises talk streaming and output_formats', async () => {
+      const response = await request(app)
+        .get('/.well-known/restap.json')
+        .expect(200);
+
+      const catalog: RestapCatalog = response.body;
+      const talk = catalog.capabilities.find(c => c.id === 'talk');
+      expect(talk).toBeDefined();
+      expect(talk!.output_formats).toEqual(['application/json', 'text/event-stream']);
+      expect(talk!.streaming?.transport).toBe('sse');
+      expect(talk!.streaming?.events).toContain('message.delta');
+      expect(catalog.protocols).toBeDefined();
     });
   });
 

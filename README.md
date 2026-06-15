@@ -24,6 +24,8 @@ REST-AP is a protocol for AI agents to expose their capabilities via standard HT
 
 * Replacing existing auth methods. Use whatever works for your use case.
 
+* **Defining tool invocation, long-running task orchestration, async job handling, or agent-to-agent delegation.** These belong to MCP, A2A, or other protocols an agent advertises. REST-AP stays minimal and focused: it standardizes discovery, a one-directional `/talk` entrypoint, and a passive `/news` channel. The optional streaming `tool.*` and `artifact` events (see below) are presentational hints for rendering progress, **not** a tool-invocation protocol.
+
 ## **Key Concepts and Terms**
 
 **Capabilities as Endpoints**. In REST‑AP, a capability maps directly to a concrete HTTP endpoint. Each capability specifies the HTTP method, endpoint path, input/output schemas, and other metadata needed for proper API interaction.
@@ -68,10 +70,122 @@ The critical distinctions between `/talk` and `/news`:
 | `GET /news` | **Bidirectional** (read) | ❌ **No** - Just retrieves stored data | Poll for updates, read what's already happened |
 | `POST /news` | **Bidirectional** (write) | ❌ **No** - Just stores data, no processing | Send replies/messages without triggering work |
 
+Only `POST /talk` may stream its response (optional, via SSE). `/news` never triggers the agent and never streams. See **Streaming /talk responses (optional)** below.
+
 **Key Points:**
 - **`POST /talk`**: One-directional - client sends query, agent processes it and responds with LLM output
 - **`/news`**: Bidirectional - can read (GET) and write (POST), but never triggers processing
 - **Why this matters:** `POST /news` prevents infinite loops. When Agent A sends a reply to Agent B via `POST /news`, Agent B doesn't process it - it's just stored. This allows agents to communicate without triggering endless processing cycles.
+
+## **Streaming /talk responses (optional)**
+
+`POST /talk` TRIGGERS agent processing, and agent processing can take time. A server MAY stream its response incrementally using [Server-Sent Events (SSE)](https://html.spec.whatwg.org/multipage/server-sent-events.html) instead of waiting to return one complete JSON body.
+
+**Streaming is OPTIONAL.** A server that does not implement it remains fully compliant by always returning `application/json`. **Streaming applies to `/talk` only.** `/news` is always passive, never triggers the agent, and never streams.
+
+### **Content negotiation**
+
+The client signals its preference with the HTTP `Accept` request header; the server signals what it actually sent with the `Content-Type` response header.
+
+| Request `Accept` | Meaning | Server behavior |
+|------------------|---------|-----------------|
+| `application/json` | Client wants a complete JSON response (the default, unchanged) | Return a normal complete JSON body |
+| `text/event-stream` | Client wants a streaming SSE response | Stream SSE if supported; otherwise `406 Not Acceptable` |
+| `text/event-stream, application/json` | Client prefers streaming but accepts JSON fallback | Stream SSE if supported, else return `application/json` |
+
+Rules:
+
+* The default (no `Accept` header, `*/*`, or `application/json`) is a complete JSON response. **Streaming must be requested explicitly** by listing `text/event-stream` in `Accept`.
+* The response `Content-Type` determines what the client actually receives (`application/json` or `text/event-stream`). Clients MUST inspect it rather than assuming.
+* If streaming is requested but unsupported, the server MAY return `application/json` when the client also accepts it; otherwise it MUST return `406 Not Acceptable`.
+* Streaming `/talk` is purely a delivery-format choice. The default JSON behavior is unchanged, so existing clients keep working with no changes.
+
+### **SSE event vocabulary for `/talk`**
+
+A streaming `/talk` response is a sequence of SSE frames. Each frame has an `event:` name and a `data:` line carrying a JSON object.
+
+**REQUIRED for basic compatibility** (every streaming server MUST emit these, and every streaming client MUST understand them):
+
+| Event | Meaning | Payload |
+|-------|---------|---------|
+| `message.start` | Begins an assistant message | `{ "id": "<message id>" }` |
+| `message.delta` | A partial text chunk to append | `{ "id": "<message id>", "text": "<chunk>" }` |
+| `message.end` | The assistant message is complete | `{ "id": "<message id>" }` |
+| `error` | An in-stream error occurred | `{ "message": "<error text>" }` |
+| `done` | The stream is finished (terminal) | `{}` |
+
+A minimal exchange emits `message.start` → one or more `message.delta` → `message.end` → `done`.
+
+**OPTIONAL** (a server MAY emit these; clients MUST NOT require them for basic compatibility, and MUST safely ignore any they do not recognize):
+
+| Event | Meaning |
+|-------|---------|
+| `status` | A human-readable progress note |
+| `tool.start` / `tool.delta` / `tool.end` | Presentational hints that the agent is using a tool |
+| `artifact` | A non-text result the client may render |
+
+> **The optional `tool.*` and `artifact` events are presentational hints only — they are NOT a tool-invocation protocol.** REST-AP does not define how tools are invoked; that belongs to MCP, A2A, or other advertised integrations.
+
+### **SSE wire format**
+
+Each frame is an `event:` line, a `data:` line containing the JSON payload, and a blank line:
+
+```
+event: message.start
+data: {"event":"message.start","id":"msg_1"}
+
+event: message.delta
+data: {"event":"message.delta","id":"msg_1","text":"Hello "}
+
+event: message.delta
+data: {"event":"message.delta","id":"msg_1","text":"world."}
+
+event: message.end
+data: {"event":"message.end","id":"msg_1"}
+
+event: done
+data: {"event":"done"}
+
+```
+
+Concrete example exchange:
+
+**Request**
+
+```
+POST /talk
+Accept: text/event-stream
+Content-Type: application/json
+
+{"message": "Say hello"}
+```
+
+**Response**
+
+```
+HTTP/1.1 200 OK
+Content-Type: text/event-stream
+Cache-Control: no-cache
+Connection: keep-alive
+
+event: message.start
+data: {"event":"message.start","id":"msg_42"}
+
+event: message.delta
+data: {"event":"message.delta","id":"msg_42","text":"Hello "}
+
+event: message.delta
+data: {"event":"message.delta","id":"msg_42","text":"there!"}
+
+event: message.end
+data: {"event":"message.end","id":"msg_42"}
+
+event: done
+data: {"event":"done"}
+
+```
+
+The client concatenates the `text` fields from each `message.delta` to assemble the full reply (`"Hello there!"`), then stops on `done`.
 
 ## **The Catalog Document**
 
@@ -89,7 +203,13 @@ The critical distinctions between `/talk` and `/news`:
       "title": "Talk to agent",
       "method": "POST",
       "endpoint": "/talk",
-      "description": "Send messages to the agent (triggers LLM processing)"
+      "description": "Send messages to the agent (triggers LLM processing)",
+      "output_formats": ["application/json", "text/event-stream"],
+      "streaming": {
+        "supported": true,
+        "transport": "sse",
+        "events": ["message.start", "message.delta", "message.end", "error", "done"]
+      }
     },
     {
       "id": "news",
@@ -176,7 +296,11 @@ The critical distinctions between `/talk` and `/news`:
       "version": "^1.0.0",
       "homepage": "https://github.com/example/text-sdk"
     }
-  ]
+  ],
+  "protocols": {
+    "mcp": { "available": true, "endpoint": "/mcp" },
+    "a2a": { "available": false }
+  }
 }
 ```
 
@@ -194,8 +318,23 @@ Each capability in the catalog can include the following standard REST API field
 * **input_schema**: JSON Schema describing the expected request body structure
 * **output_schema**: JSON Schema describing the response body structure
 * **content_types**: Array of accepted content types (e.g., ["application/json"])
+* **output_formats**: Array of response formats the capability can produce (e.g., `["application/json", "text/event-stream"]`). On `talk`, listing `text/event-stream` signals that streaming is available via content negotiation.
+* **streaming**: For `talk`, an object advertising optional SSE streaming: `{ "supported": true, "transport": "sse", "events": ["message.start", "message.delta", "message.end", "error", "done"] }`. When `supported` is `false`, the server always returns `application/json`. The `events` array lists the SSE events the server emits.
 
 The input/output schemas use standard JSON Schema format to provide precise API contracts for clients.
+
+### **Top-Level `protocols` Field**
+
+Alongside `capabilities` and `packages`, the catalog MAY include a top-level **`protocols`** object advertising whether related protocol endpoints are available:
+
+```json
+"protocols": {
+  "mcp": { "available": true, "endpoint": "/mcp" },
+  "a2a": { "available": false }
+}
+```
+
+Each entry is `{ "available": boolean, "endpoint"?: string }`. REST-AP does **not** define these protocols (MCP, A2A, etc.); the `protocols` object only tells clients which integrations the agent exposes and where to reach them. This keeps REST-AP minimal while letting agents point to richer protocols for tool invocation, task orchestration, or agent-to-agent delegation.
 
 ## **Optional Packages**
 
@@ -244,6 +383,8 @@ The packages section is **not strictly defined** - agents can use any package me
    ```json
    {"reply": "I can echo text and reverse text. Check the catalog for details."}
    ```
+
+   *Optional:* send `Accept: text/event-stream` to receive the reply as an SSE stream instead. See **Streaming /talk responses (optional)** and the `examples/talk-stream.js` client.
 
 3. **Use a capability**
 

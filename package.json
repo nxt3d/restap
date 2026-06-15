@@ -13,6 +13,7 @@
     "test:server:quick": "./test-server.sh --quick",
     "demo:discovery": "node examples/discovery.js",
     "demo:talk": "node examples/talk.js",
+    "demo:talk-stream": "node examples/talk-stream.js",
     "demo:capabilities": "node examples/capabilities.js",
     "demo:verification": "node examples/verification.js",
     "start": "node examples/demo.js"

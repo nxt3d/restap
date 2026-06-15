@@ -1,9 +1,53 @@
 import express from 'express';
 import cors from 'cors';
-import { RestapCatalog, TalkRequest, TalkResponse, NewsResponse, NewsPostRequest, NewsItem, Capability } from './types.js';
+import { RestapCatalog, TalkRequest, TalkResponse, NewsResponse, NewsPostRequest, NewsItem, Capability, TalkStreamEvent } from './types.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Streaming is OPTIONAL. Servers that leave this false stay fully compliant by
+// always returning application/json. Set RESTAP_STREAMING=off to disable.
+const STREAMING_ENABLED = process.env.RESTAP_STREAMING !== 'off';
+
+// Events this server emits when streaming POST /talk.
+const TALK_STREAM_EVENTS = ['message.start', 'message.delta', 'message.end', 'error', 'done'];
+
+// Parse an Accept header into an ordered list of media types (q-value aware,
+// preserving stable order for equal q). Returns lowercased type names.
+function parseAccept(header: string | undefined): string[] {
+  if (!header) return ['*/*'];
+  return header
+    .split(',')
+    .map((part, index) => {
+      const [type, ...params] = part.trim().split(';');
+      let q = 1;
+      for (const p of params) {
+        const m = p.trim().match(/^q=([0-9.]+)$/);
+        if (m) q = parseFloat(m[1]);
+      }
+      return { type: type.trim().toLowerCase(), q, index };
+    })
+    .filter(e => e.type.length > 0)
+    .sort((a, b) => (b.q - a.q) || (a.index - b.index))
+    .map(e => e.type);
+}
+
+// Does the Accept list permit `target`, treating */* as a wildcard match?
+function accepts(types: string[], target: string): boolean {
+  return types.includes(target) || types.includes('*/*');
+}
+
+// Streaming must be explicitly requested: a bare Accept (absent, or */*) defaults
+// to JSON. Only an explicit text/event-stream entry opts into SSE.
+function explicitlyAccepts(types: string[], target: string): boolean {
+  return types.includes(target);
+}
+
+// Write a single SSE frame: `event: <type>` + `data: <json>` + blank line.
+function sendSseEvent(res: express.Response, event: TalkStreamEvent): void {
+  res.write(`event: ${event.event}\n`);
+  res.write(`data: ${JSON.stringify(event)}\n\n`);
+}
 
 // Middleware
 app.use(cors());
@@ -44,7 +88,13 @@ const catalog: RestapCatalog = {
       title: "Talk to agent",
       method: "POST",
       endpoint: "/talk",
-      description: "Send messages to the agent (triggers LLM processing)"
+      description: "Send messages to the agent (triggers LLM processing)",
+      output_formats: ["application/json", "text/event-stream"],
+      streaming: {
+        supported: STREAMING_ENABLED,
+        transport: "sse",
+        events: TALK_STREAM_EVENTS
+      }
     },
     {
       id: "news",
@@ -113,7 +163,13 @@ const catalog: RestapCatalog = {
       },
       content_types: ["application/json"]
     }
-  ]
+  ],
+  // Advertise availability of related protocol endpoints. REST-AP does not
+  // define these protocols; this only tells clients where to find them.
+  protocols: {
+    mcp: { available: false },
+    a2a: { available: false }
+  }
 };
 
 // In-memory storage for demo purposes
@@ -128,6 +184,14 @@ app.get('/.well-known/restap.json', (req, res) => {
 });
 
 // 2. Talk endpoint
+//
+// Content negotiation:
+//   Accept: application/json                       -> complete JSON (default, unchanged)
+//   Accept: text/event-stream                      -> SSE stream (if supported)
+//   Accept: text/event-stream, application/json    -> prefer SSE, fall back to JSON
+//
+// /talk TRIGGERS agent processing. Streaming applies to /talk ONLY; /news is
+// always passive and never streams.
 app.post('/talk', (req, res) => {
   const { message, session_id }: TalkRequest = req.body;
 
@@ -137,6 +201,10 @@ app.post('/talk', (req, res) => {
       error: "Missing message field"
     });
   }
+
+  const acceptedTypes = parseAccept(req.headers.accept);
+  const wantsStream = explicitlyAccepts(acceptedTypes, 'text/event-stream');
+  const wantsJson = accepts(acceptedTypes, 'application/json');
 
   let response: TalkResponse;
 
@@ -173,6 +241,37 @@ app.post('/talk', (req, res) => {
       reply: `I received your message: "${message}". I'm a REST-AP demo agent. Try asking about capabilities, packages, echo, or reverse operations.`,
       suggested_actions: ["What can you do?", "What packages do you offer?", "Tell me about echo"]
     };
+  }
+
+  // Stream via SSE when requested and supported.
+  if (wantsStream && STREAMING_ENABLED) {
+    res.status(200);
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+
+    const messageId = `msg_${++jobCounter}`;
+    sendSseEvent(res, { event: 'message.start', id: messageId, session_id });
+
+    // Emit the reply as word-level deltas to demonstrate incremental delivery.
+    const chunks = response.reply.match(/\S+\s*/g) || [response.reply];
+    for (const chunk of chunks) {
+      sendSseEvent(res, { event: 'message.delta', id: messageId, text: chunk });
+    }
+
+    sendSseEvent(res, { event: 'message.end', id: messageId });
+    sendSseEvent(res, { event: 'done' });
+    return res.end();
+  }
+
+  // Client asked for streaming only, but this server can't stream.
+  // Fall back to JSON if acceptable, else 406.
+  if (wantsStream && !STREAMING_ENABLED && !wantsJson) {
+    return res.status(406).json({
+      error: "Not Acceptable",
+      message: "Streaming (text/event-stream) is not supported by this server. Retry with Accept: application/json."
+    });
   }
 
   res.json(response);
@@ -312,13 +411,16 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Start agent
-app.listen(PORT, () => {
-  console.log(`🤖 REST-AP Demo Agent running on http://localhost:${PORT}`);
-  console.log(`📋 Discovery endpoint: http://localhost:${PORT}/.well-known/restap.json`);
-  console.log(`💬 Talk endpoint: http://localhost:${PORT}/talk`);
-  console.log(`📰 News endpoint: http://localhost:${PORT}/news`);
-  console.log(`❤️  Health check: http://localhost:${PORT}/health`);
-});
+// Start agent only when run directly (not when imported by tests, which start
+// their own listeners on ephemeral ports).
+if (process.env.NODE_ENV !== 'test' && process.env.VITEST === undefined) {
+  app.listen(PORT, () => {
+    console.log(`🤖 REST-AP Demo Agent running on http://localhost:${PORT}`);
+    console.log(`📋 Discovery endpoint: http://localhost:${PORT}/.well-known/restap.json`);
+    console.log(`💬 Talk endpoint: http://localhost:${PORT}/talk`);
+    console.log(`📰 News endpoint: http://localhost:${PORT}/news`);
+    console.log(`❤️  Health check: http://localhost:${PORT}/health`);
+  });
+}
 
 export default app;
