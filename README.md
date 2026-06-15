@@ -1,4 +1,4 @@
-# **REST‑AP: REST Agent Protocol**
+# **RESTAP: REST Agent Protocol**
 
 **Author:** Prem Makeig @nxt3d
 **Version:** 0.1.1-beta
@@ -6,7 +6,7 @@
 
 ## **Abstract**
 
-REST-AP is a protocol for AI agents to expose their capabilities via standard HTTP endpoints. Instead of building custom APIs for each agent, REST-AP provides a uniform interface that makes any AI agent discoverable and usable by other systems. Agents implement three core endpoints: discovery, conversation, and task execution.
+RESTAP is a protocol for AI agents to expose their capabilities via standard HTTP endpoints. Instead of building custom APIs for each agent, RESTAP provides a uniform interface that makes any AI agent discoverable and usable by other systems. Agents implement three core endpoints: discovery, conversation, and task execution.
 
 ## **Goals**
 
@@ -24,15 +24,15 @@ REST-AP is a protocol for AI agents to expose their capabilities via standard HT
 
 * Replacing existing auth methods. Use whatever works for your use case.
 
-* **Defining tool invocation, long-running task orchestration, async job handling, or agent-to-agent delegation.** These belong to MCP, A2A, or other protocols an agent advertises. REST-AP stays minimal and focused: it standardizes discovery, a one-directional `/talk` entrypoint, and a passive `/news` channel. The optional streaming `tool.*` and `artifact` events (see below) are presentational hints for rendering progress, **not** a tool-invocation protocol.
+* **Defining tool invocation, long-running task orchestration, async job handling, or agent-to-agent delegation.** These belong to MCP, A2A, or other protocols an agent advertises. RESTAP stays minimal and focused: it standardizes discovery, a one-directional `/talk` entrypoint, and a passive `/news` channel. The optional streaming `tool.*` and `artifact` events (see below) are presentational hints for rendering progress, **not** a tool-invocation protocol.
 
-* **Defining session management.** The optional `session_id` (see **Sessions (optional)**) is just an opaque continuity token. REST-AP does not define session create/delete endpoints, a session-management API, mandatory persistence/TTL, or auth-bound sessions — those would make it stateful orchestration, which is out of scope.
+* **Defining session management.** The optional `session_id` (see **Sessions (optional)**) is just an opaque continuity token. RESTAP does not define session create/delete endpoints, a session-management API, mandatory persistence/TTL, or auth-bound sessions — those would make it stateful orchestration, which is out of scope.
 
 ## **Key Concepts and Terms**
 
-**Capabilities as Endpoints**. In REST‑AP, a capability maps directly to a concrete HTTP endpoint. Each capability specifies the HTTP method, endpoint path, input/output schemas, and other metadata needed for proper API interaction.
+**Capabilities as Endpoints**. In RESTAP, a capability maps directly to a concrete HTTP endpoint. Each capability specifies the HTTP method, endpoint path, input/output schemas, and other metadata needed for proper API interaction.
 
-* **AI Agent**. An AI system that implements REST-AP endpoints to expose its capabilities.
+* **AI Agent**. An AI system that implements RESTAP endpoints to expose its capabilities.
 
 * **Client**. Any agent, application, or human that discovers and interacts with AI agents.  
   
@@ -44,7 +44,7 @@ REST-AP is a protocol for AI agents to expose their capabilities via standard HT
 
 ## **High Level Architecture**
 
-REST-AP defines how AI agents expose their capabilities through standard HTTP endpoints.
+RESTAP defines how AI agents expose their capabilities through standard HTTP endpoints.
 
 1. **Discovery**. Agents publish their capabilities via `/.well-known/restap.json` for clients to discover.
 
@@ -128,7 +128,7 @@ A minimal exchange emits `message.start` → one or more `message.delta` → `me
 | `tool.start` / `tool.delta` / `tool.end` | Presentational hints that the agent is using a tool |
 | `artifact` | A non-text result the client may render |
 
-> **The optional `tool.*` and `artifact` events are presentational hints only — they are NOT a tool-invocation protocol.** REST-AP does not define how tools are invoked; that belongs to MCP, A2A, or other advertised integrations.
+> **The optional `tool.*` and `artifact` events are presentational hints only — they are NOT a tool-invocation protocol.** RESTAP does not define how tools are invoked; that belongs to MCP, A2A, or other advertised integrations.
 
 ### **SSE wire format**
 
@@ -203,15 +203,15 @@ The client concatenates the `text` fields from each `message.delta` to assemble 
   * in the SSE `message.start` event and the `done` event when streaming.
 * The client echoes the returned `session_id` back on its next `POST /talk` turn.
 
-**Servers MAY be stateless.** A server that ignores `session_id` and treats every `/talk` as a fresh exchange remains **fully compliant** — continuity simply isn't guaranteed. REST-AP mandates no server-side store, no lifecycle, no expiry, and no session API.
+**Servers MAY be stateless.** A server that ignores `session_id` and treats every `/talk` as a fresh exchange remains **fully compliant** — continuity simply isn't guaranteed. RESTAP mandates no server-side store, no lifecycle, no expiry, and no session API.
 
 **`session_id` is NOT authentication.** It is a correlation token, not access control. If a server uses it to gate conversation history, the token MUST be unguessable. Authentication and authorization remain a separate concern (see **Security**).
 
 **Relation to `/news`:** sessions are a `/talk` concept. A `/news` item MAY carry an optional `session_id` purely to correlate it with a thread, but `/news` semantics are **unchanged** — it stays passive (the agent may act on it, but never replies). Streaming is never added to `/news`.
 
-### **What REST-AP does NOT define (sessions)**
+### **What RESTAP does NOT define (sessions)**
 
-To stay minimal, REST-AP deliberately leaves these out of scope (they would turn sessions into stateful orchestration — see **Non‑Goals**):
+To stay minimal, RESTAP deliberately leaves these out of scope (they would turn sessions into stateful orchestration — see **Non‑Goals**):
 
 * No session create/delete endpoints and no session-management API.
 * No required persistence, store, or TTL/expiry.
@@ -368,7 +368,7 @@ Alongside `capabilities` and `packages`, the catalog MAY include a top-level **`
 }
 ```
 
-Each entry is `{ "available": boolean, "endpoint"?: string }`. REST-AP does **not** define these protocols (MCP, A2A, etc.); the `protocols` object only tells clients which integrations the agent exposes and where to reach them. This keeps REST-AP minimal while letting agents point to richer protocols for tool invocation, task orchestration, or agent-to-agent delegation.
+Each entry is `{ "available": boolean, "endpoint"?: string }`. RESTAP does **not** define these protocols (MCP, A2A, etc.); the `protocols` object only tells clients which integrations the agent exposes and where to reach them. This keeps RESTAP minimal while letting agents point to richer protocols for tool invocation, task orchestration, or agent-to-agent delegation.
 
 ## **Optional Packages**
 
@@ -396,7 +396,7 @@ The packages section is **not strictly defined** - agents can use any package me
 
 ## **End to End Example Flow**
 
-**Scenario**. A text analysis AI agent that implements REST-AP endpoints.
+**Scenario**. A text analysis AI agent that implements RESTAP endpoints.
 
 1. **Discovery**
 
@@ -524,16 +524,16 @@ The packages section is **not strictly defined** - agents can use any package me
 * Validate input data on both client and server
 * `session_id` is a correlation token, not authentication. It is not access control; if it gates conversation history it MUST be unguessable, and auth/authorization remains a separate concern (see **Sessions (optional)**).
 
-## **Why REST-AP?**
+## **Why RESTAP?**
 
-REST-AP provides a standard way for AI agents to expose their capabilities:
+RESTAP provides a standard way for AI agents to expose their capabilities:
 
 * **Publish** capabilities automatically via `/.well-known/restap.json`
 * **Enable conversations** through the `/talk` endpoint (one-directional: client sends query, agent responds with LLM output)
 * **Handle task execution** via capability-specific endpoints
 * **Report progress** on operations via the `/news` endpoint (bidirectional: can read and write, but never triggers a reply)
 
-Unlike plain REST APIs, REST-AP standardizes how AI agents present themselves to the world.
+Unlike plain REST APIs, RESTAP standardizes how AI agents present themselves to the world.
 
 ## **The /news Endpoint: Single Entrypoint for Reading and Writing**
 
@@ -592,20 +592,20 @@ This design ensures that:
 
 ## **For AI Agents**
 
-REST-AP enables AI agents to expose their capabilities in a standardized way:
+RESTAP enables AI agents to expose their capabilities in a standardized way:
 
 1. **Publish capabilities** via `/.well-known/restap.json` for easy discovery
 2. **Handle conversations** through the `/talk` endpoint (one-directional: receive queries, trigger LLM responses)
 3. **Execute tasks** via capability-specific endpoints
 4. **Report progress** on long-running operations via `/news` (bidirectional: can read and write, never triggers a reply)
 
-Any REST-AP compliant agent can be immediately discovered and used by other systems.
+Any RESTAP compliant agent can be immediately discovered and used by other systems.
 
-## **REST-AP + Packages = Complete AI Agent Ecosystem**
+## **RESTAP + Packages = Complete AI Agent Ecosystem**
 
-REST-AP enables AI agents to expose their capabilities, while packages provide different integration approaches:
+RESTAP enables AI agents to expose their capabilities, while packages provide different integration approaches:
 
-1. **Agent Implementation**: REST-AP defines how agents expose capabilities via HTTP endpoints
+1. **Agent Implementation**: RESTAP defines how agents expose capabilities via HTTP endpoints
 2. **Package Types**: Different package types (`claude-plugin`, `npm-package`, etc.) for various integration needs
 3. **Enhanced Tooling**: Full SDKs, CLI tools, and monitoring for agent developers
 

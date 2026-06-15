@@ -1,16 +1,16 @@
 # Text Tools Claude Plugin
 
-A complete Claude Code plugin demonstrating REST-AP integration. This plugin provides text processing capabilities by connecting Claude to a REST-AP compliant AI agent.
+A complete Claude Code plugin demonstrating RESTAP integration. This plugin provides text processing capabilities by connecting Claude to a RESTAP compliant AI agent.
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 - [Claude Code](https://code.claude.com/) installed
-- Node.js (for running the REST-AP server)
+- Node.js (for running the RESTAP server)
 
-### 1. Start the REST-AP Agent Server
+### 1. Start the RESTAP Agent Server
 
-First, start the REST-AP demo agent that the plugin will connect to:
+First, start the RESTAP demo agent that the plugin will connect to:
 
 ```bash
 # In the main project directory
@@ -21,7 +21,7 @@ npm run dev
 
 The server will start on `http://localhost:3000` and display:
 ```
-🤖 REST-AP Demo Agent running on http://localhost:3000
+🤖 RESTAP Demo Agent running on http://localhost:3000
 📋 Discovery endpoint: http://localhost:3000/.well-known/restap.json
 💬 Talk endpoint: http://localhost:3000/talk
 📰 News endpoint: http://localhost:3000/news
@@ -58,7 +58,7 @@ Please reverse this text: "Claude is awesome"
 ## 📋 What This Plugin Does
 
 ### Skills Provided
-- **`text-agent-client`**: Teaches Claude how to properly interact with REST-AP text processing agents
+- **`text-agent-client`**: Teaches Claude how to properly interact with RESTAP text processing agents
 
 ### Capabilities Enabled
 - **Text Echo**: Send text to agent and get it echoed back
@@ -77,7 +77,7 @@ example-plugin/
 │   └── text-agent-skill/
 │       └── SKILL.md        # Claude skill definition
 ├── lib/
-│   └── client.js           # REST-AP client library
+│   └── client.js           # RESTAP client library
 ├── docs/
 │   └── README.md           # This file
 └── package.json            # NPM package info
@@ -150,9 +150,9 @@ Please echo "test message"
 3. **Test Integration**: Restart both server and Claude
 4. **Iterate**: Refine based on real usage
 
-## 📚 REST-AP Protocol Overview
+## 📚 RESTAP Protocol Overview
 
-This plugin demonstrates the complete REST-AP workflow:
+This plugin demonstrates the complete RESTAP workflow:
 
 1. **Discovery** → Agent advertises capabilities
 2. **Communication** → Claude talks to agent for guidance
@@ -161,7 +161,7 @@ This plugin demonstrates the complete REST-AP workflow:
 
 ## 🤝 Contributing
 
-- Report issues with the REST-AP server or Claude integration
+- Report issues with the RESTAP server or Claude integration
 - Suggest improvements to the skill definitions
 - Test with different Claude Code versions
 

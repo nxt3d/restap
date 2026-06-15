@@ -1,4 +1,4 @@
-// REST-AP Text Agent Client Library
+// RESTAP Text Agent Client Library
 // Enhanced client for interacting with text processing agents
 
 class TextAgentClient {

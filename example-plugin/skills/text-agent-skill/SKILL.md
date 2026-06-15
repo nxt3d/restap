@@ -7,7 +7,7 @@ allowed-tools: Bash(curl:*), Read
 # Text Processing Agent Client Skill
 
 ## Overview
-This skill teaches how to effectively interact with the Text Processing AI Agent's REST-AP endpoints for various text operations.
+This skill teaches how to effectively interact with the Text Processing AI Agent's RESTAP endpoints for various text operations.
 
 ## When to Use This Skill
 - Need text analysis or processing

@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# REST-AP Server Test Script
-# Tests all endpoints of a running REST-AP server
+# RESTAP Server Test Script
+# Tests all endpoints of a running RESTAP server
 
 # Configuration
 SERVER_URL="${SERVER_URL:-http://localhost:3000}"
@@ -102,7 +102,7 @@ check_server() {
 test_discovery() {
     print_header "Testing Discovery Endpoint"
 
-    run_test "REST-AP Catalog Discovery" \
+    run_test "RESTAP Catalog Discovery" \
         "curl -s '$SERVER_URL/.well-known/restap.json'"
 
     # Validate catalog structure
@@ -176,7 +176,7 @@ test_news() {
 
 # Run comprehensive capability test
 test_full_flow() {
-    print_header "Testing Full REST-AP Flow"
+    print_header "Testing Full RESTAP Flow"
 
     echo "1. Discover capabilities..."
     local catalog=$(curl -s "$SERVER_URL/.well-known/restap.json")
@@ -190,13 +190,13 @@ test_full_flow() {
     fi
 
     echo -e "\n2. Execute echo capability..."
-    local echo_result=$(curl -s -X POST -H 'Content-Type: application/json' -d '{"text":"REST-AP Test"}' "$SERVER_URL/text/echo")
+    local echo_result=$(curl -s -X POST -H 'Content-Type: application/json' -d '{"text":"RESTAP Test"}' "$SERVER_URL/text/echo")
     local echoed_text=$(echo "$echo_result" | jq -r '.echoed_text')
 
-    if [ "$echoed_text" = "REST-AP Test" ]; then
+    if [ "$echoed_text" = "RESTAP Test" ]; then
         print_success "Echo Capability Execution"
     else
-        print_failure "Echo Capability Execution" "Expected 'REST-AP Test', got '$echoed_text'"
+        print_failure "Echo Capability Execution" "Expected 'RESTAP Test', got '$echoed_text'"
     fi
 
     echo -e "\n3. Check news for job updates..."
@@ -234,7 +234,7 @@ test_performance() {
 
 # Show usage
 show_usage() {
-    echo "REST-AP Server Test Script"
+    echo "RESTAP Server Test Script"
     echo ""
     echo "Usage: $0 [OPTIONS]"
     echo ""
@@ -294,7 +294,7 @@ if ! command -v jq &> /dev/null; then
 fi
 
 # Main test execution
-echo -e "${BLUE}🧪 REST-AP Server Test Suite${NC}"
+echo -e "${BLUE}🧪 RESTAP Server Test Suite${NC}"
 echo -e "${BLUE}Testing server at: $SERVER_URL${NC}"
 echo -e "${BLUE}Started at: $(date)${NC}\n"
 
@@ -325,7 +325,7 @@ echo -e "${GREEN}Passed: $TESTS_PASSED${NC}"
 echo -e "${RED}Failed: $TESTS_FAILED${NC}"
 
 if [ $TESTS_FAILED -eq 0 ]; then
-    echo -e "\n${GREEN}🎉 All tests passed! REST-AP server is working correctly.${NC}"
+    echo -e "\n${GREEN}🎉 All tests passed! RESTAP server is working correctly.${NC}"
     exit 0
 else
     echo -e "\n${RED}❌ Some tests failed. Check the server implementation.${NC}"

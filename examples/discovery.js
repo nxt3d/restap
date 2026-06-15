@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
 /**
- * REST-AP Discovery Demo
+ * RESTAP Discovery Demo
  *
  * Demonstrates the discovery phase where a client fetches
  * the catalog from /.well-known/restap.json
  */
 
-console.log('🔍 REST-AP Discovery Demo');
+console.log('🔍 RESTAP Discovery Demo');
 console.log('=========================\n');
 
 const catalog = {

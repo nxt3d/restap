@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * REST-AP /news Endpoint Demo
+ * RESTAP /news Endpoint Demo
  *
  * Demonstrates /news as a single bidirectional endpoint:
  * - GET /news: Read updates (no processing)
@@ -10,7 +10,7 @@
  * Key Point: /news never triggers agent processing, unlike /talk
  */
 
-console.log('📰 REST-AP /news Endpoint Demo');
+console.log('📰 RESTAP /news Endpoint Demo');
 console.log('==================================\n');
 console.log('Key Concept: /news is a SINGLE endpoint for reading and writing.');
 console.log('Unlike /talk, /news NEVER triggers agent processing.\n');

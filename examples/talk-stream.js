@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * REST-AP Streaming Talk Demo
+ * RESTAP Streaming Talk Demo
  *
  * Demonstrates consuming a streaming `POST /talk` response over Server-Sent
  * Events (SSE) by sending `Accept: text/event-stream`.
@@ -19,7 +19,7 @@
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
-console.log('💬 REST-AP Streaming Talk Demo (SSE)');
+console.log('💬 RESTAP Streaming Talk Demo (SSE)');
 console.log('====================================\n');
 
 // Minimal SSE frame parser: splits a buffer on blank lines and extracts the

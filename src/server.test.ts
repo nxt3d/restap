@@ -15,7 +15,7 @@ async function loadAppWithStreaming(enabled: boolean) {
   return mod.default;
 }
 
-describe('REST-AP Server', () => {
+describe('RESTAP Server', () => {
   let server: any;
 
   beforeEach(() => {
@@ -28,7 +28,7 @@ describe('REST-AP Server', () => {
   });
 
   describe('Discovery Endpoint', () => {
-    it('should return valid REST-AP catalog', async () => {
+    it('should return valid RESTAP catalog', async () => {
       const response = await request(app)
         .get('/.well-known/restap.json')
         .expect(200);
@@ -37,7 +37,7 @@ describe('REST-AP Server', () => {
 
       expect(catalog.restap_version).toBe('1.0');
       expect(catalog.agent).toBeDefined();
-      expect(catalog.agent.name).toBe('Simple REST-AP Demo Agent');
+      expect(catalog.agent.name).toBe('Simple RESTAP Demo Agent');
       expect(catalog.capabilities).toBeDefined();
       expect(Array.isArray(catalog.capabilities)).toBe(true);
       expect(catalog.capabilities.length).toBeGreaterThan(0);
@@ -94,7 +94,7 @@ describe('REST-AP Server', () => {
 
   describe('Text Echo Capability', () => {
     it('should echo text back', async () => {
-      const testText = 'Hello, REST-AP!';
+      const testText = 'Hello, RESTAP!';
 
       const response = await request(app)
         .post('/text/echo')

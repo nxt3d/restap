@@ -53,12 +53,12 @@ function sendSseEvent(res: express.Response, event: TalkStreamEvent): void {
 app.use(cors());
 app.use(express.json());
 
-// REST-AP Catalog
+// RESTAP Catalog
 const catalog: RestapCatalog = {
   restap_version: "1.0",
   agent: {
-    name: "Simple REST-AP Demo Agent",
-    description: "A demonstration AI agent implementing REST-AP",
+    name: "Simple RESTAP Demo Agent",
+    description: "A demonstration AI agent implementing RESTAP",
     contact: "demo@restap.example.com"
   },
   packages: [
@@ -167,7 +167,7 @@ const catalog: RestapCatalog = {
       content_types: ["application/json"]
     }
   ],
-  // Advertise availability of related protocol endpoints. REST-AP does not
+  // Advertise availability of related protocol endpoints. RESTAP does not
   // define these protocols; this only tells clients where to find them.
   protocols: {
     mcp: { available: false },
@@ -219,7 +219,7 @@ app.post('/talk', (req, res) => {
   // Simple conversation logic
   if (message.toLowerCase().includes('hello') || message.toLowerCase().includes('hi')) {
     response = {
-      reply: "Hello! I'm a REST-AP demo agent. I can echo text, reverse text, and help you understand the protocol. Check /.well-known/restap.json for my capabilities and available packages.",
+      reply: "Hello! I'm a RESTAP demo agent. I can echo text, reverse text, and help you understand the protocol. Check /.well-known/restap.json for my capabilities and available packages.",
       suggested_actions: ["Try the echo capability", "Try the reverse capability", "Ask about packages"]
     };
   } else if (message.toLowerCase().includes('echo')) {
@@ -246,7 +246,7 @@ app.post('/talk', (req, res) => {
     };
   } else {
     response = {
-      reply: `I received your message: "${message}". I'm a REST-AP demo agent. Try asking about capabilities, packages, echo, or reverse operations.`,
+      reply: `I received your message: "${message}". I'm a RESTAP demo agent. Try asking about capabilities, packages, echo, or reverse operations.`,
       suggested_actions: ["What can you do?", "What packages do you offer?", "Tell me about echo"]
     };
   }
@@ -427,7 +427,7 @@ app.get('/health', (req, res) => {
 // their own listeners on ephemeral ports).
 if (process.env.NODE_ENV !== 'test' && process.env.VITEST === undefined) {
   app.listen(PORT, () => {
-    console.log(`🤖 REST-AP Demo Agent running on http://localhost:${PORT}`);
+    console.log(`🤖 RESTAP Demo Agent running on http://localhost:${PORT}`);
     console.log(`📋 Discovery endpoint: http://localhost:${PORT}/.well-known/restap.json`);
     console.log(`💬 Talk endpoint: http://localhost:${PORT}/talk`);
     console.log(`📰 News endpoint: http://localhost:${PORT}/news`);

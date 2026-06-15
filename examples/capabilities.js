@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 
 /**
- * REST-AP Capabilities Demo
+ * RESTAP Capabilities Demo
  *
  * Demonstrates how to use specific capabilities from the catalog
  */
 
-console.log('⚡ REST-AP Capabilities Demo');
+console.log('⚡ RESTAP Capabilities Demo');
 console.log('===========================\n');
 
 // Example capability usage
@@ -36,12 +36,12 @@ const capabilities = [
     endpoint: "/text/summarize",
     example: {
       request: {
-        text: "REST-AP is a protocol for building AI agents that provides a minimal bootstrap-and-package model for discovering capabilities, installing language-native skills, establishing sessions, and accessing free or paid operations using plain REST semantics.",
+        text: "RESTAP is a protocol for building AI agents that provides a minimal bootstrap-and-package model for discovering capabilities, installing language-native skills, establishing sessions, and accessing free or paid operations using plain REST semantics.",
         max_length: 50,
         style: "concise"
       },
       response: {
-        summary: "REST-AP provides a minimal protocol for AI agents to discover capabilities, install skills, establish sessions, and perform operations using REST semantics.",
+        summary: "RESTAP provides a minimal protocol for AI agents to discover capabilities, install skills, establish sessions, and perform operations using REST semantics.",
         word_count: 28,
         compression_ratio: 0.45
       }

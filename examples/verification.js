@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * REST-AP Skill Package Verification Demo
+ * RESTAP Skill Package Verification Demo
  *
  * Demonstrates on-chain verification of skill packages
  */
@@ -10,7 +10,7 @@ import { createHash } from 'crypto';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-console.log('🔐 REST-AP Skill Package Verification Demo');
+console.log('🔐 RESTAP Skill Package Verification Demo');
 console.log('==========================================\n');
 
 // Simulate package verification process

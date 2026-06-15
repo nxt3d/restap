@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 /**
- * REST-AP Protocol Demo
+ * RESTAP Protocol Demo
  *
- * This script demonstrates the basic REST-AP protocol flow:
+ * This script demonstrates the basic RESTAP protocol flow:
  * 1. Discovery - Fetch the catalog from /.well-known/restap.json
  * 2. Talk - Send a message to /talk endpoint
  * 3. Capabilities - Use specific capabilities from the catalog
@@ -53,11 +53,11 @@ const mockResponses = {
   },
 
   talk: {
-    reply: "Hello! I'm a REST-AP compatible AI agent. I can help you with text summarization and image description tasks."
+    reply: "Hello! I'm a RESTAP compatible AI agent. I can help you with text summarization and image description tasks."
   }
 };
 
-console.log('🚀 REST-AP Protocol Demo');
+console.log('🚀 RESTAP Protocol Demo');
 console.log('========================\n');
 
 // 1. Discovery
@@ -87,11 +87,11 @@ console.log('\n');
 // 4. Example capability usage
 console.log('4. 📝 Example: Using text.summarize capability');
 console.log('   POST https://api.example.com/text/summarize');
-console.log('   Body: {"text": "REST-AP is a protocol for AI agents...", "max_length": 100}\n');
+console.log('   Body: {"text": "RESTAP is a protocol for AI agents...", "max_length": 100}\n');
 
 console.log('   Response:');
 console.log(JSON.stringify({
-  summary: "REST-AP provides a minimal protocol for AI agents to discover capabilities, install skills, and perform operations using REST semantics.",
+  summary: "RESTAP provides a minimal protocol for AI agents to discover capabilities, install skills, and perform operations using REST semantics.",
   word_count: 85
 }, null, 2));
 

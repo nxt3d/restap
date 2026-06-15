@@ -1,8 +1,8 @@
 {
   "name": "text-tools",
-  "description": "Text processing tools for interacting with REST-AP agents",
+  "description": "Text processing tools for interacting with RESTAP agents",
   "version": "1.0.0",
   "author": {
-    "name": "REST-AP Team"
+    "name": "RESTAP Team"
   }
 }

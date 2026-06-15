@@ -1,4 +1,4 @@
-// REST-AP Protocol Types
+// RESTAP Protocol Types
 
 export interface RestapCatalog {
   restap_version: string;
@@ -10,12 +10,12 @@ export interface RestapCatalog {
   packages?: Package[];
   capabilities: Capability[];
   // Optional: advertise availability of related protocol endpoints (MCP, A2A, etc.).
-  // REST-AP does not define these protocols; this only signals where to find them.
+  // RESTAP does not define these protocols; this only signals where to find them.
   protocols?: Protocols;
 }
 
-// Advertises whether related protocol endpoints are available alongside REST-AP.
-// REST-AP does NOT define tool invocation, task orchestration, or agent-to-agent
+// Advertises whether related protocol endpoints are available alongside RESTAP.
+// RESTAP does NOT define tool invocation, task orchestration, or agent-to-agent
 // delegation. Those belong to MCP, A2A, or other advertised integrations.
 export interface Protocols {
   mcp?: ProtocolAdvert;

@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
 /**
- * REST-AP Talk Demo
+ * RESTAP Talk Demo
  *
  * Demonstrates the /talk endpoint for general conversation
  * and command dispatching
  */
 
-console.log('💬 REST-AP Talk Demo');
+console.log('💬 RESTAP Talk Demo');
 console.log('===================\n');
 
 // Simulate a conversation flow

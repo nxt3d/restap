@@ -1,5 +1,5 @@
 {
-  "name": "rest-ap",
+  "name": "restap",
   "version": "0.1.1-beta",
   "description": "REST Agent Protocol - A minimal protocol for building AI agents with REST semantics",
   "main": "index.js",
@@ -20,7 +20,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nxt3d/rest-ap.git"
+    "url": "git+https://github.com/nxt3d/restap.git"
   },
   "keywords": [
     "ai",
@@ -34,9 +34,9 @@
   "author": "Prem Makeig <prem@nxt3d.xyz>",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/nxt3d/rest-ap/issues"
+    "url": "https://github.com/nxt3d/restap/issues"
   },
-  "homepage": "https://github.com/nxt3d/rest-ap#readme",
+  "homepage": "https://github.com/nxt3d/restap#readme",
   "engines": {
     "node": ">=18.0.0"
   },
