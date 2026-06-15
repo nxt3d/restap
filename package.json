@@ -1,6 +1,6 @@
 {
   "name": "rest-ap",
-  "version": "0.1.0-beta",
+  "version": "0.1.1-beta",
   "description": "REST Agent Protocol - A minimal protocol for building AI agents with REST semantics",
   "main": "index.js",
   "type": "module",

@@ -1,7 +1,7 @@
 # **REST‑AP: REST Agent Protocol**
 
 **Author:** Prem Makeig @nxt3d
-**Version:** 0.1.0-beta
+**Version:** 0.1.1-beta
 **Date:** 11/8/2025
 
 ## **Abstract**
@@ -35,7 +35,7 @@ REST-AP is a protocol for AI agents to expose their capabilities via standard HT
 * **AI Agent**. An AI system that implements REST-AP endpoints to expose its capabilities.
 
 * **Client**. Any agent, application, or human that discovers and interacts with AI agents.  
-    
+  
 * **Capability**. A declared operation with input/output description. For example, image.upscale.
 
 * **Skill**. A package following the Claude Code Skills standard that teaches clients how to effectively interact with AI agent endpoints. Skills use the exact same `SKILL.md` format as Claude Code Skills.
@@ -52,38 +52,40 @@ REST-AP defines how AI agents expose their capabilities through standard HTTP en
 
 3. **Execute**. Agents implement capability endpoints that clients can call directly.
 
-4. **News**. Agents implement `/news` as a single bidirectional endpoint for reading and writing updates. Unlike `/talk`, `/news` communications **never trigger agent processing** - it's purely passive storage and retrieval.
+4. **News**. Agents implement `/news` as a single bidirectional endpoint for reading and writing updates. Unlike `/talk`, `/news` **never triggers a reply** — the agent may read, store, or even act on the content internally, but it never sends a response back, which is what keeps agents from looping.
 
 ### **Minimal Endpoint Set**
 
 * `GET /.well-known/restap.json` - Discovery
 * `POST /talk` - One-directional entrypoint (client → agent, triggers LLM response)
 * `/news` - Single bidirectional endpoint:
-  * `GET /news` - Read updates (no processing)
-  * `POST /news` - Write messages/replies (no processing)
+  * `GET /news` - Read updates (read-only; no reply)
+  * `POST /news` - Write messages/replies (the agent may act on them, but never replies)
 
 ### **Key Difference: /talk vs /news**
 
 The critical distinctions between `/talk` and `/news`:
 
-| Endpoint | Direction | Triggers Processing? | Use Case |
-|----------|-----------|-------------------|----------|
-| `POST /talk` | **One-directional** (client → agent) | ✅ **Yes** - Agent receives query and triggers LLM response | Send tasks/questions that need agent work |
-| `GET /news` | **Bidirectional** (read) | ❌ **No** - Just retrieves stored data | Poll for updates, read what's already happened |
-| `POST /news` | **Bidirectional** (write) | ❌ **No** - Just stores data, no processing | Send replies/messages without triggering work |
+| Endpoint | Direction | Sends a Reply? | Reaches the LLM? | Use Case |
+|----------|-----------|----------------|------------------|----------|
+| `POST /talk` | **One-directional** (client → agent) | ✅ **Yes** - the agent replies with LLM output (optionally streamed via SSE; supports `session_id` continuity) | **Yes** - it *is* the prompt the agent answers | Send tasks/questions that need an answer; hold a conversation |
+| `GET /news` | **Bidirectional** (read) | ❌ **No** - read-only retrieval | N/A | Poll for updates, read what's already happened |
+| `POST /news` | **Bidirectional** (write) | ❌ **No - must not reply** | **Yes, as memory** - the item MAY be read by the model, and the agent MAY act on it internally (remember it, update state/a database) — it just **never sends a reply** | Deliver replies/facts the agent should absorb or act on, without triggering a reply back |
 
-Only `POST /talk` may stream its response (optional, via SSE). `/news` never triggers the agent and never streams. See **Streaming /talk responses (optional)** below.
+Only `POST /talk` may stream its response (optional, via SSE). `/news` never triggers a reply and never streams. See **Streaming /talk responses (optional)** below.
+
+> **The constraint on `/news` is narrow: the agent must not *reply*.** A `/news` item MAY still reach the agent's LLM (as memory) and the agent MAY act on it internally — read it, remember it, update state or a database. The one thing it must never do is **send a reply**, because a reply could re-trigger another agent and create an endless loop. Throughout this spec, "passive" / "no processing" is shorthand for **"never sends a reply"** — it does *not* mean the model never sees the content, nor that the agent can't act on it.
 
 **Key Points:**
-- **`POST /talk`**: One-directional - client sends query, agent processes it and responds with LLM output
-- **`/news`**: Bidirectional - can read (GET) and write (POST), but never triggers processing
-- **Why this matters:** `POST /news` prevents infinite loops. When Agent A sends a reply to Agent B via `POST /news`, Agent B doesn't process it - it's just stored. This allows agents to communicate without triggering endless processing cycles.
+- **`POST /talk`**: One-directional - client sends a query, the agent replies with LLM output
+- **`/news`**: Bidirectional - can read (GET) and write (POST), but **never sends a reply**
+- **Why this matters:** `POST /news` prevents infinite reply loops. When Agent A sends a reply to Agent B via `POST /news`, Agent B does not reply to it - it may read or act on the content, but it sends nothing back, so there is no loop.
 
 ## **Streaming /talk responses (optional)**
 
 `POST /talk` TRIGGERS agent processing, and agent processing can take time. A server MAY stream its response incrementally using [Server-Sent Events (SSE)](https://html.spec.whatwg.org/multipage/server-sent-events.html) instead of waiting to return one complete JSON body.
 
-**Streaming is OPTIONAL.** A server that does not implement it remains fully compliant by always returning `application/json`. **Streaming applies to `/talk` only.** `/news` is always passive, never triggers the agent, and never streams.
+**Streaming is OPTIONAL.** A server that does not implement it remains fully compliant by always returning `application/json`. **Streaming applies to `/talk` only.** `/news` never triggers a reply and never streams (the agent may still consume what it receives).
 
 ### **Content negotiation**
 
@@ -205,7 +207,7 @@ The client concatenates the `text` fields from each `message.delta` to assemble 
 
 **`session_id` is NOT authentication.** It is a correlation token, not access control. If a server uses it to gate conversation history, the token MUST be unguessable. Authentication and authorization remain a separate concern (see **Security**).
 
-**Relation to `/news`:** sessions are a `/talk` concept. A `/news` item MAY carry an optional `session_id` purely to correlate it with a thread, but `/news` semantics are **unchanged** — it stays passive and never triggers processing. Streaming and processing are never added to `/news`.
+**Relation to `/news`:** sessions are a `/talk` concept. A `/news` item MAY carry an optional `session_id` purely to correlate it with a thread, but `/news` semantics are **unchanged** — it stays passive (the agent may act on it, but never replies). Streaming is never added to `/news`.
 
 ### **What REST-AP does NOT define (sessions)**
 
@@ -247,14 +249,14 @@ To stay minimal, REST-AP deliberately leaves these out of scope (they would turn
       "title": "Poll for updates",
       "method": "GET",
       "endpoint": "/news",
-      "description": "Poll for task completion and updates (no LLM processing)"
+      "description": "Poll for task completion and updates (read-only; no reply)"
     },
     {
       "id": "news_receive",
       "title": "Receive replies",
       "method": "POST",
       "endpoint": "/news",
-      "description": "Receive messages/replies from other agents (no LLM processing)"
+      "description": "Receive messages/replies from other agents (agent may act on them, but never replies)"
     },
     {
       "id": "text.echo",
@@ -466,7 +468,7 @@ The packages section is **not strictly defined** - agents can use any package me
    }
    ```
    
-   Response (Agent 1 receives this, **no processing triggered**):
+   Response (Agent 1 receives this; it may act on it, but **sends no reply**):
    
    ```json
    {
@@ -508,10 +510,10 @@ The packages section is **not strictly defined** - agents can use any package me
    ```
 
    **Key Points:**
-   - `POST /talk` is **one-directional** - client sends query, agent receives it and triggers LLM response
-   - `POST /news` does NOT trigger processing (Agent 1 just stores the reply)
-   - `GET /news` does NOT trigger processing (Agent 3 just reads what's stored)
-   - `/news` is a **bidirectional** endpoint (can read and write), but never triggers work
+   - `POST /talk` is **one-directional** - client sends query, agent receives it and triggers an LLM reply
+   - `POST /news` does NOT trigger a reply (Agent 1 may store or act on it, but sends nothing back)
+   - `GET /news` is read-only (Agent 3 just reads what's stored; no reply)
+   - `/news` is a **bidirectional** endpoint (can read and write), but never triggers a reply
 
 7. **Client local function or CLI command acme news-updated()** The client may expose:
 
@@ -529,17 +531,17 @@ REST-AP provides a standard way for AI agents to expose their capabilities:
 * **Publish** capabilities automatically via `/.well-known/restap.json`
 * **Enable conversations** through the `/talk` endpoint (one-directional: client sends query, agent responds with LLM output)
 * **Handle task execution** via capability-specific endpoints
-* **Report progress** on operations via the `/news` endpoint (bidirectional: can read and write, but never triggers processing)
+* **Report progress** on operations via the `/news` endpoint (bidirectional: can read and write, but never triggers a reply)
 
 Unlike plain REST APIs, REST-AP standardizes how AI agents present themselves to the world.
 
 ## **The /news Endpoint: Single Entrypoint for Reading and Writing**
 
-The `/news` endpoint is a **single bidirectional entrypoint** that handles both reading and writing, with the critical property that **it never triggers agent processing**.
+The `/news` endpoint is a **single bidirectional entrypoint** that handles both reading and writing, with the critical property that **it never triggers a reply**. The agent may read, store, or act on what arrives — it simply never sends a response back.
 
 ### **Reading from /news (GET)**
 
-**GET /news** - Poll for updates (no processing)
+**GET /news** - Poll for updates (read-only; no reply)
 - Read what's already happened - completed tasks, replies, notifications
 - Supports `since` parameter: `GET /news?since=1703012345000` to get only new items
 - Free to poll frequently (no LLM inference costs)
@@ -547,11 +549,23 @@ The `/news` endpoint is a **single bidirectional entrypoint** that handles both 
 
 ### **Writing to /news (POST)**
 
-**POST /news** - Write messages/replies (no processing)
-- Store messages/replies without triggering any agent work
+**POST /news** - Write messages/replies (never triggers a reply)
+- Store messages/replies; the agent may read or act on them (remember a fact, update state), but it never replies
 - Used for sending replies back to the original sender
-- Prevents infinite loops (unlike `/talk` which triggers processing)
+- Prevents infinite reply loops (unlike `/talk`, which does reply)
 - Example: Agent 2 sends reply to Agent 1 → `POST /news` Agent 1
+
+### **Surfacing /news to the agent (anti-loop guidance)**
+
+The "no reply" guarantee starts at the **protocol layer**: `POST /news` stores an item and does not synchronously invoke the agent's LLM or generate a response. But stored news is usually **surfaced to the agent later** — injected into its conversation context so the agent is aware of what other agents reported. When that content reaches the model, the anti-loop property must be preserved on the **consumption side** too: a model shown raw news can mistake it for a prompt that requires an answer, re-introducing exactly the reply loops `/news` exists to prevent.
+
+Therefore, when an implementation surfaces a `/news` item into the agent's context, it **SHOULD** wrap the item with an automated, system-level instruction that marks it as informational-only and tells the model not to reply. For example:
+
+> `[NEWS — informational only. Do NOT reply to this. This is context for you to consume and remember, not a message to answer.]`
+
+**Example.** A fact is delivered to the agent via `POST /news` — say the value `"blue"` in answer to an earlier "What is your favorite color?". Storing it needs no reply. But because the item is later surfaced into the agent's context wrapped with the guard above, a subsequent `POST /talk` — "tell me my favorite color" — is answered correctly: **"blue"**. The agent consumed the news as memory without ever replying to it. This is the point of the guard: `/news` content must be able to reach the model so it informs future `/talk` answers, *without* the model treating the news item itself as a message to respond to.
+
+This is guidance for the **consumption side** and an implementation detail — it is **not** part of the `/news` wire format and does **not** make `/news` send a reply. The HTTP contract is unchanged; the guard simply ensures the no-reply guarantee holds end-to-end, all the way to the model.
 
 ### **Complete Agent Communication Flow**
 
@@ -560,7 +574,7 @@ Agent 1 → POST /talk → Agent 2
           (Agent 2 processes the request)
 
 Agent 2 → POST /news → Agent 1  
-          (Agent 1 receives reply, no processing triggered)
+          (Agent 1 receives it; may act on it, sends no reply)
 
 Agent 3 → GET /news → Agent 2
           (Agent 3 reads what Agent 2 has been working on)
@@ -568,13 +582,13 @@ Agent 3 → GET /news → Agent 2
 
 **The Flow:**
 1. **Agent 1 sends task**: `POST /talk` to Agent 2 → Agent 2 receives query, triggers LLM response (one-directional)
-2. **Agent 2 sends reply**: `POST /news` to Agent 1 → Just stored, no processing (bidirectional write)
-3. **Agent 3 checks status**: `GET /news` from Agent 2 → Reads updates, no processing (bidirectional read)
+2. **Agent 2 sends reply**: `POST /news` to Agent 1 → Stored; Agent 1 may act on it but sends no reply (bidirectional write)
+3. **Agent 3 checks status**: `GET /news` from Agent 2 → Reads updates; read-only, no reply (bidirectional read)
 
 This design ensures that:
 - `/talk` is **one-directional** - client sends query, agent responds with LLM output
-- `/news` is **bidirectional** - can read (GET) and write (POST), but never triggers agent work
-- `/news` is purely passive - it's a communication channel that doesn't trigger any agent processing, making it safe for bidirectional communication without infinite loops
+- `/news` is **bidirectional** - can read (GET) and write (POST), but never triggers a reply
+- `/news` never replies - the agent may consume or act on what it receives, but it never sends a response back, making it safe for bidirectional communication without infinite reply loops
 
 ## **For AI Agents**
 
@@ -583,7 +597,7 @@ REST-AP enables AI agents to expose their capabilities in a standardized way:
 1. **Publish capabilities** via `/.well-known/restap.json` for easy discovery
 2. **Handle conversations** through the `/talk` endpoint (one-directional: receive queries, trigger LLM responses)
 3. **Execute tasks** via capability-specific endpoints
-4. **Report progress** on long-running operations via `/news` (bidirectional: can read and write, never triggers processing)
+4. **Report progress** on long-running operations via `/news` (bidirectional: can read and write, never triggers a reply)
 
 Any REST-AP compliant agent can be immediately discovered and used by other systems.
 
