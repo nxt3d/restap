@@ -1,7 +1,7 @@
 # **RESTAP: REST Agent Protocol**
 
 **Author:** Prem Makeig @nxt3d
-**Version:** 0.1.1-beta
+**Version:** 0.1.2-beta
 **Date:** 11/8/2025
 
 ## **Abstract**
@@ -61,6 +61,7 @@ RESTAP defines how AI agents expose their capabilities through standard HTTP end
 * `/news` - Single bidirectional endpoint:
   * `GET /news` - Read updates (read-only; no reply)
   * `POST /news` - Write messages/replies (the agent may act on them, but never replies)
+  * `/news` MAY be **session-scoped**: a server whose updates are per-conversation (not global to the agent) MAY require a `session_id`. If it does, it MUST declare this in discovery and reject requests that omit it with `400 {"error":"missing_session_id"}` (see **Sessions (optional)**).
 
 ### **Key Difference: /talk vs /news**
 
@@ -207,7 +208,7 @@ The client concatenates the `text` fields from each `message.delta` to assemble 
 
 **`session_id` is NOT authentication.** It is a correlation token, not access control. If a server uses it to gate conversation history, the token MUST be unguessable. Authentication and authorization remain a separate concern (see **Security**).
 
-**Relation to `/news`:** sessions are a `/talk` concept. A `/news` item MAY carry an optional `session_id` purely to correlate it with a thread, but `/news` semantics are **unchanged** — it stays passive (the agent may act on it, but never replies). Streaming is never added to `/news`.
+**Relation to `/news`:** sessions originate as a `/talk` concept, but a server MAY also use `session_id` to **scope `/news`** when its updates are per-conversation rather than global to the agent. A `/news` item MAY carry an optional `session_id` purely to correlate it with a thread; additionally, a server MAY **require** `session_id` on `GET /news` and/or `POST /news`. A server that requires it MUST (a) declare the requirement in its discovery document (see **Discovery**), and (b) respond `400 {"error":"missing_session_id"}` when it is omitted. Servers whose news is global to the agent SHOULD accept `/news` without a `session_id`. Either way, `/news` semantics are **unchanged** — it stays passive (the agent may act on it, but never replies), and streaming is never added to `/news`.
 
 ### **What RESTAP does NOT define (sessions)**
 
@@ -249,14 +250,22 @@ To stay minimal, RESTAP deliberately leaves these out of scope (they would turn 
       "title": "Poll for updates",
       "method": "GET",
       "endpoint": "/news",
-      "description": "Poll for task completion and updates (read-only; no reply)"
+      "description": "Poll for task completion and updates (read-only; no reply)",
+      "sessions": {
+        "supported": true,
+        "required": true
+      }
     },
     {
       "id": "news_receive",
       "title": "Receive replies",
       "method": "POST",
       "endpoint": "/news",
-      "description": "Receive messages/replies from other agents (agent may act on them, but never replies)"
+      "description": "Receive messages/replies from other agents (agent may act on them, but never replies)",
+      "sessions": {
+        "supported": true,
+        "required": true
+      }
     },
     {
       "id": "text.echo",
