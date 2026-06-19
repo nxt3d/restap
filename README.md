@@ -1,7 +1,7 @@
 # **RESTAP: REST Agent Protocol**
 
 **Author:** Prem Makeig @nxt3d
-**Version:** 0.1.2-beta
+**Version:** 0.1.3-beta
 **Date:** 11/8/2025
 
 ## **Abstract**
@@ -207,6 +207,16 @@ The client concatenates the `text` fields from each `message.delta` to assemble 
 **Servers MAY be stateless.** A server that ignores `session_id` and treats every `/talk` as a fresh exchange remains **fully compliant** — continuity simply isn't guaranteed. RESTAP mandates no server-side store, no lifecycle, no expiry, and no session API.
 
 **`session_id` is NOT authentication.** It is a correlation token, not access control. If a server uses it to gate conversation history, the token MUST be unguessable. Authentication and authorization remain a separate concern (see **Security**).
+
+**Identifier format and entropy.** `session_id` is opaque, but for safe and interoperable handling its shape and randomness are constrained:
+
+* It MUST match `^[A-Za-z0-9._-]{16,128}$` — URL‑safe characters, 16 to 128 bytes. A server that receives a `session_id` outside these bounds MUST reject the request with `400 {"error":"invalid_session_id"}`, and MUST return that same error regardless of transport (JSON and SSE alike). Servers MUST NOT impose a stricter shape (for example, requiring a specific UUID layout) — any value within these bounds is valid.
+* Because holding a `session_id` can grant access to a conversation's history (via `/news`), it is a **bearer capability**. A client‑generated `session_id` SHOULD carry at least **122 bits of entropy**; one that a server mints MUST. Length alone is not sufficient — the value must be unguessable, not merely long.
+* RECOMMENDED encodings (either satisfies the entropy requirement):
+  * a **UUIDv4** — e.g. `f3bb16ab-295c-4f32-9856-4280fd541b93`, or
+  * **base64url of 16 or more random bytes** — e.g. `9Yx2pK7m-Qd0Rb3nVt1aZw`.
+  * A human‑readable prefix (e.g. `sess_…`) is permitted, provided the remainder meets the entropy requirement.
+* A `session_id` MUST be treated as a secret: servers MUST NOT write it to shared logs, and it SHOULD NOT be placed in request URLs where intermediaries can capture it. A server that scopes `/news` by session SHOULD also accept the `session_id` from a request header, so clients can keep it out of the query string.
 
 **Relation to `/news`:** sessions originate as a `/talk` concept, but a server MAY also use `session_id` to **scope `/news`** when its updates are per-conversation rather than global to the agent. A `/news` item MAY carry an optional `session_id` purely to correlate it with a thread; additionally, a server MAY **require** `session_id` on `GET /news` and/or `POST /news`. A server that requires it MUST (a) declare the requirement in its discovery document (see **Discovery**), and (b) respond `400 {"error":"missing_session_id"}` when it is omitted. Servers whose news is global to the agent SHOULD accept `/news` without a `session_id`. Either way, `/news` semantics are **unchanged** — it stays passive (the agent may act on it, but never replies), and streaming is never added to `/news`.
 
