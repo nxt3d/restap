@@ -63,6 +63,10 @@ RESTAP defines how AI agents expose their capabilities through standard HTTP end
   * `POST /news` - Write messages/replies (the agent may act on them, but never replies)
   * `/news` MAY be **session-scoped**: a server whose updates are per-conversation (not global to the agent) MAY require a `session_id`. If it does, it MUST declare this in discovery and reject requests that omit it with `400 {"error":"missing_session_id"}` (see **Sessions (optional)**).
 
+### **Advertising a RESTAP Agent**
+
+A RESTAP agent is identified by a single **base URL**, and the endpoints above are paths off that base (`{base}/.well-known/restap.json`, `{base}/talk`, `{base}/news`), as with any standard REST API. To advertise an agent (e.g. an ERC-8004 service entry, a directory, or a link), you give just two things: the **base URL** and the type **`RESTAP`** (or `restap`). The advertised endpoint MUST be the base URL itself, not the discovery document and not a `/talk` URL. Clients MUST reach `/talk`, `/news`, and `/.well-known/restap.json` by appending those fixed paths to it. For example, a base of `https://example.com/api/agent/42` means `/talk` is at `https://example.com/api/agent/42/talk`.
+
 ### **Key Difference: /talk vs /news**
 
 The critical distinctions between `/talk` and `/news`:
