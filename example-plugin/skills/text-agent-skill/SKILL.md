@@ -38,12 +38,12 @@ curl -X POST http://agent.example.com/talk \
 2. **Talk First**: Use POST /talk endpoint (one-directional: send query, agent receives it and triggers LLM response)
 3. **Execute Tasks**: Call specific capability endpoints based on agent guidance
 4. **News Endpoint**: Use /news as a single bidirectional endpoint:
-   - **GET /news**: Read updates (no processing)
-   - **POST /news**: Write replies/messages (no processing)
+   - **GET /news**: Read updates (no reply)
+   - **POST /news**: Write replies/messages (no reply)
 
 **Key Points**:
 - `/talk` is **one-directional** - client sends query, agent responds with LLM output
-- `/news` is **bidirectional** - can read (GET) and write (POST), but **never triggers agent processing**
+- `/news` is **bidirectional** - can read (GET) and write (POST), but **never sends a reply**
 
 ## Best Practices
 - Always check agent capabilities before making requests
@@ -63,17 +63,17 @@ curl -X POST http://agent.example.com/talk \
 
 ## The /news Endpoint: Single Entrypoint for Reading and Writing
 
-The `/news` endpoint is a **single bidirectional entrypoint** that handles both reading and writing. The critical property: **it never triggers agent processing**.
+The `/news` endpoint is a **single bidirectional entrypoint** that handles both reading and writing. The critical property: **it never sends a reply**.
 
 ### Reading from /news (GET)
 ```bash
-# Poll for updates (no processing triggered)
+# Poll for updates (no reply triggered)
 curl http://agent.example.com/news?since=0
 ```
 
 ### Writing to /news (POST)
 ```bash
-# Send reply to another agent (no processing triggered)
+# Send reply to another agent (no reply triggered)
 curl -X POST http://agent-a.example.com/news \
   -H "Content-Type: application/json" \
   -d '{
@@ -87,12 +87,12 @@ curl -X POST http://agent-a.example.com/news \
 ### Complete Flow Example
 ```
 Agent 1 → POST /talk → Agent 2 (one-directional: Agent 2 receives query, triggers LLM response)
-Agent 2 → POST /news → Agent 1 (bidirectional write: just stored, no processing)
-Agent 3 → GET /news → Agent 2 (bidirectional read: just reads, no processing)
+Agent 2 → POST /news → Agent 1 (bidirectional write: just stored, no reply)
+Agent 3 → GET /news → Agent 2 (bidirectional read: just reads, no reply)
 ```
 
 **Why this matters**: 
 - `/talk` is one-directional - client sends query, agent responds with LLM output
-- `/news` is bidirectional but never triggers processing - prevents infinite loops
+- `/news` is bidirectional but never sends a reply - prevents infinite loops
 - When you send a reply via `POST /news`, the receiving agent doesn't process it - it's just stored
 - This allows safe bidirectional communication without triggering endless processing cycles

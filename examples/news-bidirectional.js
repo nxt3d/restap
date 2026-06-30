@@ -4,16 +4,16 @@
  * RESTAP /news Endpoint Demo
  *
  * Demonstrates /news as a single bidirectional endpoint:
- * - GET /news: Read updates (no processing)
- * - POST /news: Write messages/replies (no processing)
+ * - GET /news: Read updates (no reply)
+ * - POST /news: Write messages/replies (no reply)
  *
- * Key Point: /news never triggers agent processing, unlike /talk
+ * Key Point: /news never sends a reply, unlike /talk
  */
 
 console.log('📰 RESTAP /news Endpoint Demo');
 console.log('==================================\n');
 console.log('Key Concept: /news is a SINGLE endpoint for reading and writing.');
-console.log('Unlike /talk, /news NEVER triggers agent processing.\n');
+console.log('Unlike /talk, /news NEVER sends a reply.\n');
 console.log('='.repeat(60) + '\n');
 
 // Example 1: Polling for updates (GET /news)
@@ -145,8 +145,8 @@ console.log(JSON.stringify({
 console.log('\n✅ /news endpoint demo complete!');
 console.log('\nKey Points:');
 console.log('• /news is a SINGLE bidirectional endpoint (GET for reading, POST for writing)');
-console.log('• GET /news: Read updates (no processing triggered, free to poll)');
-console.log('• POST /news: Write messages/replies (no processing triggered, prevents loops)');
-console.log('• Unlike /talk, /news NEVER triggers agent processing');
+console.log('• GET /news: Read updates (no reply triggered, free to poll)');
+console.log('• POST /news: Write messages/replies (no reply triggered, prevents loops)');
+console.log('• Unlike /talk, /news NEVER sends a reply');
 console.log('• This design enables safe bidirectional agent-to-agent communication');
 console.log('• Clear attribution with in_reply_to linking responses to queries');

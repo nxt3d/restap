@@ -324,7 +324,7 @@ describe('RESTAP Server', () => {
     });
 
     it('(c) SSE stream carries session_id on message.start and done', async () => {
-      const provided = 'sess_stream_456';
+      const provided = 'sess_stream_456789';
       const response = await request(app)
         .post('/talk')
         .set('Accept', 'text/event-stream')
@@ -341,6 +341,16 @@ describe('RESTAP Server', () => {
       const doneData = body.match(/event: done\ndata: (.*)\n/);
       expect(doneData).not.toBeNull();
       expect(JSON.parse(doneData![1]).session_id).toBe(provided);
+    });
+
+    it('(e) POST /talk rejects an out-of-bounds session_id with 400 invalid_session_id', async () => {
+      const response = await request(app)
+        .post('/talk')
+        .set('Accept', 'application/json')
+        .send({ message: 'Hello!', session_id: 'too-short' })
+        .expect(400);
+
+      expect(response.body.error).toBe('invalid_session_id');
     });
 
     it('(d) catalog advertises talk.sessions.supported', async () => {

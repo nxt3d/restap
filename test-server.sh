@@ -107,7 +107,7 @@ test_discovery() {
 
     # Validate catalog structure
     run_test "Catalog Structure Validation" \
-        "curl -s '$SERVER_URL/.well-known/restap.json' | jq -e '.restap_version and .provider and .capabilities'"
+        "curl -s '$SERVER_URL/.well-known/restap.json' | jq -e '.restap_version and .agent and .capabilities'"
 
     # Check capabilities
     run_test "Capabilities Exist" \

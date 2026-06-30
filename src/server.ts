@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import { randomUUID } from 'node:crypto';
 import { RestapCatalog, TalkRequest, TalkResponse, NewsResponse, NewsPostRequest, NewsItem, Capability, TalkStreamEvent } from './types.js';
 
 const app = express();
@@ -11,6 +12,24 @@ const STREAMING_ENABLED = process.env.RESTAP_STREAMING !== 'off';
 
 // Events this server emits when streaming POST /talk.
 const TALK_STREAM_EVENTS = ['message.start', 'message.delta', 'message.end', 'error', 'done'];
+
+// session_id format per the RESTAP spec: 16 to 128 url-safe characters drawn
+// from [A-Za-z0-9._-]. A UUIDv4 satisfies this.
+const SESSION_ID_RE = /^[A-Za-z0-9._-]{16,128}$/;
+
+// session_id is optional. This returns true when it is absent (the common case)
+// or well-formed, and false only when present but outside the allowed shape, so
+// the caller can reject it per the spec.
+function sessionIdValid(value: unknown): boolean {
+  return value === undefined || value === null
+    || (typeof value === 'string' && SESSION_ID_RE.test(value));
+}
+
+// Mint a fresh session_id with at least 122 bits of entropy, as the spec
+// requires for server-minted ids. A UUIDv4 carries 122 bits.
+function mintSessionId(): string {
+  return randomUUID();
+}
 
 // Parse an Accept header into an ordered list of media types (q-value aware,
 // preserving stable order for equal q). Returns lowercased type names.
@@ -104,14 +123,14 @@ const catalog: RestapCatalog = {
       title: "Poll for updates",
       method: "GET",
       endpoint: "/news",
-      description: "Poll for task completion and updates (no LLM processing)"
+      description: "Poll for task completion and updates (read-only; never sends a reply)"
     },
     {
       id: "news_receive",
       title: "Receive replies",
       method: "POST",
       endpoint: "/news",
-      description: "Receive messages/replies from other agents (no LLM processing)"
+      description: "Receive messages/replies from other agents (the agent may act on them, but never replies)"
     },
     {
       id: "text.echo",
@@ -205,6 +224,13 @@ app.post('/talk', (req, res) => {
     });
   }
 
+  // session_id is optional, but if the client supplies one it MUST match the
+  // spec format. Reject an out-of-bounds value the same way for JSON and SSE
+  // clients (the rejection is a plain 400 before any stream begins).
+  if (!sessionIdValid(session_id)) {
+    return res.status(400).json({ error: "invalid_session_id" });
+  }
+
   const acceptedTypes = parseAccept(req.headers.accept);
   const wantsStream = explicitlyAccepts(acceptedTypes, 'text/event-stream');
   const wantsJson = accepts(acceptedTypes, 'application/json');
@@ -212,7 +238,7 @@ app.post('/talk', (req, res) => {
   // Sessions (optional): continue the thread when the client supplies an opaque
   // session_id, otherwise mint one and return it so the client can continue.
   // This demo is stateless beyond echoing the token. session_id is NOT auth.
-  const sessionId = session_id || `sess_${++jobCounter}`;
+  const sessionId = session_id || mintSessionId();
 
   let response: TalkResponse;
 
@@ -320,7 +346,7 @@ app.get('/news', (req, res) => {
   res.json(news);
 });
 
-// POST /news - Receive replies/messages (passive storage, no processing)
+// POST /news - Receive replies/messages (stored; the agent may act on them, but never replies)
 app.post('/news', (req, res) => {
   const { type, from, in_reply_to, message, data, session_id }: NewsPostRequest = req.body;
 
@@ -330,8 +356,13 @@ app.post('/news', (req, res) => {
     });
   }
 
+  // session_id is optional on /news too, but a supplied value MUST be well-formed.
+  if (!sessionIdValid(session_id)) {
+    return res.status(400).json({ error: "invalid_session_id" });
+  }
+
   // Store the incoming message/reply. session_id (if present) is kept purely as
-  // a correlation hint; storing it does NOT trigger any processing.
+  // a correlation hint; storing it never sends a reply.
   const newsId = `news_${++jobCounter}`;
   const newsItem: NewsItem = {
     type,

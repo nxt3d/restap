@@ -12,8 +12,9 @@ console.log('=========================\n');
 
 const catalog = {
   restap_version: "1.0",
-  provider: {
+  agent: {
     name: "Acme Vision",
+    description: "AI agent for image processing",
     contact: "support@acme.test"
   },
   packages: [
@@ -41,16 +42,40 @@ const catalog = {
       title: "Upscale an image",
       method: "POST",
       endpoint: "/image/upscale",
-      input_schema: "https://acme.test/schemas/image.upscale.input.json",
-      output_schema: "https://acme.test/schemas/image.upscale.output.json"
+      input_schema: {
+        type: "object",
+        properties: {
+          image_url: { type: "string", description: "URL of the image to upscale" },
+          factor: { type: "number", description: "Upscale factor, e.g. 2" }
+        },
+        required: ["image_url"]
+      },
+      output_schema: {
+        type: "object",
+        properties: {
+          job_id: { type: "string" },
+          status: { type: "string" }
+        }
+      }
     },
     {
       id: "image.describe",
       title: "Describe an image",
       method: "POST",
       endpoint: "/image/describe",
-      input_schema: "https://acme.test/schemas/image.describe.input.json",
-      output_schema: "https://acme.test/schemas/image.describe.output.json"
+      input_schema: {
+        type: "object",
+        properties: {
+          image_url: { type: "string", description: "URL of the image to describe" }
+        },
+        required: ["image_url"]
+      },
+      output_schema: {
+        type: "object",
+        properties: {
+          description: { type: "string" }
+        }
+      }
     }
   ]
 };

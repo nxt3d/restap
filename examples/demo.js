@@ -20,8 +20,9 @@ const __dirname = dirname(__filename);
 const mockResponses = {
   catalog: {
     restap_version: "1.0",
-    provider: {
-      name: "Demo Provider",
+    agent: {
+      name: "Demo Agent",
+      description: "AI agent for text and image tasks",
       contact: "demo@example.com"
     },
     packages: [
@@ -38,16 +39,38 @@ const mockResponses = {
         title: "Summarize text",
         method: "POST",
         endpoint: "/text/summarize",
-        input_schema: "https://demo.example.com/schemas/text.summarize.input.json",
-        output_schema: "https://demo.example.com/schemas/text.summarize.output.json"
+        input_schema: {
+          type: "object",
+          properties: {
+            text: { type: "string", description: "The text to summarize" }
+          },
+          required: ["text"]
+        },
+        output_schema: {
+          type: "object",
+          properties: {
+            summary: { type: "string" }
+          }
+        }
       },
       {
         id: "image.describe",
         title: "Describe an image",
         method: "POST",
         endpoint: "/image/describe",
-        input_schema: "https://demo.example.com/schemas/image.describe.input.json",
-        output_schema: "https://demo.example.com/schemas/image.describe.output.json"
+        input_schema: {
+          type: "object",
+          properties: {
+            image_url: { type: "string", description: "URL of the image to describe" }
+          },
+          required: ["image_url"]
+        },
+        output_schema: {
+          type: "object",
+          properties: {
+            description: { type: "string" }
+          }
+        }
       }
     ]
   },
