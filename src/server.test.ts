@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import app from './server.js';
-import { RestapCatalog } from './types.js';
+import { Capability, PaymentAdvert, RestapCatalog } from './types.js';
 
 // Load a fresh server instance with a specific RESTAP_STREAMING value.
 // The streaming flag is read once at module load, so toggling it requires
@@ -362,6 +362,56 @@ describe('RESTAP Server', () => {
       const talk = catalog.capabilities.find(c => c.id === 'talk');
       expect(talk).toBeDefined();
       expect(talk!.sessions?.supported).toBe(true);
+    });
+  });
+
+  describe('Paid capabilities', () => {
+    // RESTAP does not define payment, so this asserts the ADVERT is expressible
+    // and survives the wire -- not that any payment is settled.
+    it('a capability can advertise a payment protocol beside its human price', () => {
+      const paid: Capability = {
+        id: 'text.echo',
+        title: 'Echo Text',
+        method: 'POST',
+        endpoint: '/text/echo',
+        pricing: { free_calls: 100, cost_per_call: 0.01, currency: 'USD' },
+        payment: {
+          protocol: 'x402',
+          amount: '10000',
+          asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+          network: 'eip155:8453',
+        },
+      };
+
+      const wire = JSON.parse(JSON.stringify(paid)) as Capability;
+      expect(wire.payment?.protocol).toBe('x402');
+      // A string, because a smallest-unit on-chain amount does not survive a
+      // JSON number -- the reason `pricing.cost_per_call` cannot carry a quote.
+      expect(typeof wire.payment?.amount).toBe('string');
+      expect(wire.payment?.network).toBe('eip155:8453');
+      // The two prices are independent and may both be present.
+      expect(wire.pricing?.currency).toBe('USD');
+    });
+
+    it('carries protocol-specific fields RESTAP does not define', () => {
+      const payment: PaymentAdvert = {
+        protocol: 'x402',
+        amount: '1',
+        scheme: 'exact',
+        payTo: '0x0000000000000000000000000000000000000001',
+      };
+      expect(payment.scheme).toBe('exact');
+      expect(payment.payTo).toBeDefined();
+    });
+
+    it('is optional: the demo catalog stays valid without it', async () => {
+      const response = await request(app)
+        .get('/.well-known/restap.json')
+        .expect(200);
+
+      const catalog: RestapCatalog = response.body;
+      expect(catalog.capabilities.length).toBeGreaterThan(0);
+      expect(catalog.capabilities.every(c => c.payment === undefined)).toBe(true);
     });
   });
 

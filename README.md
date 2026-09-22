@@ -408,7 +408,34 @@ Each capability in the catalog can include the following standard REST API field
 * **streaming**: For `talk`, an object advertising optional SSE streaming: `{ "supported": true, "transport": "sse", "events": ["message.start", "message.delta", "message.end", "error", "done"] }`. When `supported` is `false`, the server always returns `application/json`. The `events` array lists the SSE events the server emits.
 * **sessions**: For `talk`, an object advertising optional session continuity: `{ "supported": true }`. When `supported` is `true`, the server mints and returns a `session_id` that clients echo back to continue a thread (see **Sessions (optional)**). When `false`, the server is stateless and ignores `session_id`.
 
+* **pricing**: Human-readable price, for display: `{ "free_calls": 100, "cost_per_call": 0.001, "currency": "USD" }`.
+* **payment**: Machine-payable price, for a client that must settle before calling. See **Paid Capabilities** below.
+
 The input/output schemas use standard JSON Schema format to provide precise API contracts for clients.
+
+### **Paid Capabilities (optional)**
+
+A capability MAY be settled over a payment protocol. RESTAP does not define payment, exactly as it does not define authentication -- the **`payment`** object says only which protocol settles the call and what it costs, so a client can decide whether to pay without spending a request to find out:
+
+```json
+"payment": {
+  "protocol": "x402",
+  "amount": "10000",
+  "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  "network": "eip155:8453"
+}
+```
+
+* **protocol**: The payment protocol, e.g. `"x402"`. Not defined by RESTAP.
+* **amount**: Price per call in the asset's smallest unit, as a decimal **string**. A string because a smallest-unit on-chain amount does not survive a JSON number -- which is why `pricing.cost_per_call` cannot carry a payable quote on its own.
+* **asset** / **network**: What is being paid and where it lives. `network` SHOULD be a [CAIP-2](https://chainagnostic.org/CAIPs/caip-2) chain id; `asset` is the identifier the protocol expects (for an EVM token, its contract address).
+* **recipient**: Where to pay, when the protocol needs a destination distinct from the capability's own endpoint.
+
+Protocol-specific fields are permitted, for the same reason `Package` allows them: RESTAP should not have to change to describe a protocol it does not define.
+
+`pricing` and `payment` are independent and a capability MAY advertise both -- `pricing` for a human reading the catalog, `payment` for a client paying it. When both are present they SHOULD agree.
+
+How the payment is carried on the wire belongs to the payment protocol, not to RESTAP. With x402, for instance, an unpaid call is answered `402 Payment Required` with a quote, and the client retries carrying the settled authorization.
 
 ### **Top-Level `protocols` Field**
 
