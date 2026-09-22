@@ -57,6 +57,7 @@ export interface Capability {
     cost_per_call?: number;
     currency?: string;
   };
+  payment?: PaymentAdvert; // Optional: advertise a payment protocol that settles this capability
 }
 
 // Advertises optional SSE streaming for a capability (currently only /talk).
@@ -71,6 +72,34 @@ export interface StreamingAdvert {
 // is simply not guaranteed. There is no session-management API.
 export interface SessionsAdvert {
   supported: boolean;
+}
+
+// Advertises that a capability is settled over a payment protocol RESTAP does
+// not define -- exactly as `security` points at auth schemes RESTAP does not
+// define. This says only WHICH protocol and WHAT it costs, so a client can
+// decide whether to pay before spending a request to find out.
+//
+// This is the machine-payable price; `Capability.pricing` above is the
+// human-readable one. A capability MAY advertise both, and they SHOULD agree.
+// `pricing` alone cannot carry a payable quote: `cost_per_call` is a JSON
+// number, and a smallest-unit on-chain amount does not survive one.
+export interface PaymentAdvert {
+  // The payment protocol, e.g. "x402". Not defined by RESTAP.
+  protocol: string;
+  // Price per call in the asset's smallest unit, as a decimal STRING so no
+  // precision is lost (e.g. "10000" = 0.01 USDC at 6 decimals).
+  amount: string;
+  // What is being paid, and where it lives. `network` SHOULD be a CAIP-2 chain
+  // id (e.g. "eip155:8453") and `asset` the identifier the protocol expects --
+  // for an EVM token, its contract address.
+  asset?: string;
+  network?: string;
+  // Where to pay, when the protocol needs a destination distinct from the
+  // capability's own endpoint.
+  recipient?: string;
+  // Protocol-specific fields. Open for the same reason `Package` is: RESTAP
+  // should not have to change to describe a protocol it does not define.
+  [key: string]: any;
 }
 
 export interface Parameter {
