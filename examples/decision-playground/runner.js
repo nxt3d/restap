@@ -1,6 +1,7 @@
 // Shared deterministic Lane Runner simulation. Distances are forward-world units.
 import {seededRandom} from './breakout.js';
 export const LANES=5, LANE_FRAMES=10, RAMP_GAP=24, JUMP_DISTANCE=30;
+export const START_BUFFER_FRAMES=120;
 export const SPEEDS=[0.5,1,2];
 export function freshRunner(seed=1,speed=1){
  if(!SPEEDS.includes(speed))throw Error('Unsupported speed');
@@ -8,7 +9,7 @@ export function freshRunner(seed=1,speed=1){
  extend(g);return g;
 }
 function extend(g){while(g.rows.length<12){
- const base=g.block++*360, pick=()=>1+Math.floor(g.rng()*LANES), safe=pick(),ramp=pick(),gap=pick();
+ const base=START_BUFFER_FRAMES*g.speed+g.block++*360, pick=()=>1+Math.floor(g.rng()*LANES), safe=pick(),ramp=pick(),gap=pick();
  const wall=Array.from({length:5},(_,i)=>i+1===safe?'COIN':'WALL');
  const launch=Array.from({length:5},(_,i)=>i+1===ramp?'RAMP':'EMPTY');
  const partial=Array.from({length:5},(_,i)=>i+1===gap?'COIN':'TRENCH');
@@ -23,7 +24,8 @@ export function advanceRunner(g,target=g.target){
  while(g.rows.length&&g.rows[0].at<=g.distance){
   const row=g.rows.shift(),cell=row.cells[Math.round(g.lane)-1];
   if(cell==='WALL'||(cell==='TRENCH'&&g.jumpUntil<row.at)){
-   g.over=true;g.cause=cell==='WALL'?'wall':row.requiresRamp?'missed ramp':'trench';return;
+   g.over=true;g.cause=cell==='WALL'?'wall':row.requiresRamp?'missed ramp':'trench';
+   g.death={frame:g.frame,row:g.rowsSurvived,currentLane:g.lane,currentLaneRounded:Math.round(g.lane),targetLane:g.target,cells:explicitCells(row),object:cell};return;
   }
   if(cell==='RAMP')g.jumpUntil=row.at+JUMP_DISTANCE;
   if(cell==='TRENCH')g.trenchesJumped++;
@@ -68,16 +70,18 @@ export function runnerTarget(g,action){
  return g.target;
 }
 export function perfectRunnerAction(g,classic=false){const lane=lanePlan(g)[0]??Math.round(g.lane);return classic?(lane<g.lane?'left':lane>g.lane?'right':'stay'):`lane-${lane}`;}
+const explicitCells=row=>row.cells.map((object,i)=>({lane:i+1,object}));
 export function runnerState(g,o={}){
- const rows=g.rows.slice(0,8).map(row=>({lanes:[...row.cells],framesAway:Math.ceil((row.at-g.distance)/g.speed)}));
- const state={frame:g.frame,currentLane:g.lane,targetLane:g.target,speed:g.speed,laneChangeFrames:LANE_FRAMES,jumping:jumping(g),jumpFramesRemaining:Math.max(0,Math.floor((g.jumpUntil-g.distance)/g.speed)),rows};
- if(o.facts)state.derived=rows.map(row=>({framesUntil:row.framesAway,rampLanes:row.lanes.flatMap((x,i)=>x==='RAMP'?[i+1]:[]),groundSafeLanes:row.lanes.flatMap((x,i)=>x!=='WALL'&&x!=='TRENCH'?[i+1]:[]),jumpSafeLanes:row.lanes.flatMap((x,i)=>x!=='WALL'?[i+1]:[])}));
+ const rows=g.rows.slice(0,8).map(row=>({cells:explicitCells(row),framesAway:Math.ceil((row.at-g.distance)/g.speed)}));
+ const state={frame:g.frame,currentLane:g.lane,currentLaneRounded:Math.round(g.lane),targetLane:g.target,speed:g.speed,laneChangeFrames:LANE_FRAMES,jumping:jumping(g),jumpFramesRemaining:Math.max(0,Math.floor((g.jumpUntil-g.distance)/g.speed)),rows};
+ if(o.facts)state.derived=rows.map(row=>({framesUntil:row.framesAway,rampLanes:row.cells.filter(c=>c.object==='RAMP').map(c=>c.lane),groundSafeLanes:row.cells.filter(c=>c.object!=='WALL'&&c.object!=='TRENCH').map(c=>c.lane),jumpSafeLanes:row.cells.filter(c=>c.object!=='WALL').map(c=>c.lane)}));
  if(o.assist){state.recommendedLane=lanePlan(g)[0]??null;state.assist='Reachability planner recommendation at capture time';}
  return state;
 }
 export function runnerContext(g,o={},history=[]){
  let text='Survive the endless five-lane runner for as many rows as possible; collect optional coins.';
  if(o.instructions)text+=' Forward movement is automatic. Lanes 1–5 run left to right. WALL kills even while jumping. TRENCH kills unless jumping. Go ONTO a green RAMP before a full-width trench: merely avoiding obstacles will fail. A ramp automatically jumps across the next trench 24 distance units later; the jump lasts 30 distance units. Lane movement takes 10 simulation frames per lane. Red W = wall, dark T = trench, green R = ramp, gold C = coin; blue circle = runner. Upcoming rows move downward toward the runner. Plan ahead for travel time. '+(o.mode==='paused'?'Simulation freezes during inference, then holds your action for K frames.':'Simulation continues during inference; observations can age before your action applies.');
+ if(o.instructions&&o.input!=='images')text+=' State row cells explicitly name their 1-based lane. currentLane is the continuous position during movement; currentLaneRounded is the lane used for collisions.';
  const context={text};
  if(o.input!=='images')context.state=runnerState(g,o);
  if(o.input!=='state'){

@@ -111,6 +111,12 @@ Breakout remains available at `/`. The runner is a separate game page sharing th
 same `/decide` adapter, model, score diagnostics and input-cost estimate. No
 protocol or version changes are involved.
 
+- A two-second (120 simulation frame) empty buffer is added before the existing
+  first-row lead-in at every speed. At speed 1, the first wall arrives at frame
+  220 (3.67 seconds), rather than frame 100 (1.67 seconds). Row gaps are unchanged.
+- State rows use `cells: [{lane: 1, object: "WALL"}, ...]`, with explicit lanes
+  1–5. `currentLane` preserves continuous movement; `currentLaneRounded` is the
+  collision lane. The live harness saves capture/return states and death cells.
 - Five lanes, automatic forward motion at 0.5/1/2 world units per 60 Hz simulation
   frame. Lateral movement is limited to one lane per 10 frames. Default actions
   target lanes 1–5 and hold; classic actions target one adjacent lane from the
