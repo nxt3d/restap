@@ -11,7 +11,7 @@ console.log('🔍 RESTAP Discovery Demo');
 console.log('=========================\n');
 
 const catalog = {
-  restap_version: "1.0",
+  restap_version: "0.2.0-beta",
   agent: {
     name: "Acme Vision",
     description: "AI agent for image processing",

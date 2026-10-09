@@ -19,7 +19,7 @@ const __dirname = dirname(__filename);
 // Mock server responses for demonstration
 const mockResponses = {
   catalog: {
-    restap_version: "1.0",
+    restap_version: "0.2.0-beta",
     agent: {
       name: "Demo Agent",
       description: "AI agent for text and image tasks",

@@ -35,7 +35,7 @@ describe('RESTAP Server', () => {
 
       const catalog: RestapCatalog = response.body;
 
-      expect(catalog.restap_version).toBe('1.0');
+      expect(catalog.restap_version).toBe('0.2.0-beta');
       expect(catalog.agent).toBeDefined();
       expect(catalog.agent.name).toBe('Simple RESTAP Demo Agent');
       expect(catalog.capabilities).toBeDefined();
@@ -372,7 +372,7 @@ describe('RESTAP Server', () => {
         .expect(200);
 
       expect(response.body.status).toBe('healthy');
-      expect(response.body.version).toBe('0.1.0');
+      expect(response.body.version).toBe('0.2.0-beta');
       expect(response.body.timestamp).toBeDefined();
     });
   });

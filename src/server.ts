@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import { RESTAP_VERSION } from './version.js';
 import { randomUUID } from 'node:crypto';
 import { RestapCatalog, TalkRequest, TalkResponse, NewsResponse, NewsPostRequest, NewsItem, Capability, TalkStreamEvent } from './types.js';
 
@@ -74,7 +75,7 @@ app.use(express.json());
 
 // RESTAP Catalog
 const catalog: RestapCatalog = {
-  restap_version: "1.0",
+  restap_version: RESTAP_VERSION,
   agent: {
     name: "Simple RESTAP Demo Agent",
     description: "A demonstration AI agent implementing RESTAP",
@@ -450,7 +451,7 @@ app.get('/health', (req, res) => {
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
-    version: '0.1.0'
+    version: RESTAP_VERSION
   });
 });
 
