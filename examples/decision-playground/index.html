@@ -22,14 +22,17 @@
 <label><input id="tuneC" type="checkbox"> C · Dash actions (12 px/frame)</label>
 <label><input id="tuneD" type="checkbox"> D · Zone precision</label><select id="zonePrecision" aria-label="Zone precision"><option value="8">8 zones</option><option value="12">12 zones</option><option value="16">16 zones</option></select>
 <label><input id="tuneE" type="checkbox"> E · Assist baseline (predicted landing in state)</label>
+<label><input id="tuneF" type="checkbox"> F · Safe-position defense (center and hold)</label>
+<label><input id="tuneG" type="checkbox"> G · Probability-weighted safest target</label>
+<small>The spec says action is the decision. G shows this demo caller’s own policy choice: a probability-weighted median target, falling back to the chosen action when probabilities are absent. The chosen action determines normal/dash speed.</small>
 <label for="controller">Controller</label><select id="controller"><option value="model">Model</option><option value="perfect">Perfect · ideal information, no API calls</option></select>
 <small style="display:block;margin-top:8px">B and E only add state in state/both modes. Perfect recomputes the wall-only landing zone every frame using the same paddle speed limits; brick collisions can change the prediction. Its survival is an ideal-information reference, not a guaranteed win.</small></fieldset>
 <canvas id="breakout" width="480" height="360" style="max-width:480px" aria-label="Breakout game with ball, paddle and bricks"></canvas>
 <p id="gameStats" aria-live="polite"></p>
 <div class="row"><label for="frames">Frames / decision (K)</label><input id="frames" type="number" min="1" max="120" value="20"><label for="breakTurns">Max decisions</label><input id="breakTurns" type="number" min="1" max="500" value="50"></div>
 <div class="row"><button id="breakPlay" class="primary">Play Breakout</button><button id="breakPause" disabled>Stop</button><button id="breakStep">Step decision</button><button id="breakReset">Reset</button></div>
-<p><small>Real-time: 8/12/16 target zones + stay; normal 4 px/frame, optional dash 12 px/frame. Interval is the minimum time between request starts (0 = immediately after each reply). Stop discards pending replies. Paused baseline uses left/right/stay for K frames; C or D enables target zones with the same K-frame hold. Decision budget is total since Reset. A miss ends the game; no lives or respawns. Auto-restart waits for the old reply to settle and respects both budgets. Same seeds replays launches from game 1 on Reset or mode changes; unchecked selects a new seed on Reset. New seed starts a fresh sequence. Input modes compare full state, images only, or both. Images are recent decision snapshots, oldest first; missing history is padded and labeled. Results below survive Reset for this tab session.</small></p><p id="realtimeStats" aria-live="polite"></p><div id="snapshotStrip" style="display:flex;gap:8px;overflow:auto"></div><ol id="breakLog" style="max-height:220px;overflow:auto"></ol></div>
-<div class="card"><h2>Per-game · session comparison</h2><p><small>Completed games only for survival averages; interrupted games are excluded. Decisions survived = valid actions applied while still alive (paused: survived the resulting K frames). Time alive = simulation seconds, excluding inference pauses. Grouped by play mode, input, images/K, speed, seed set, A–E toggles, zone selection, controller, age and interval. Latency/cost/stale include all replies, including discarded end-of-game replies. Input cost uses the supplied $0.10/M token estimate; unknown usage is excluded and counted. Output charges excluded.</small></p><div style="overflow:auto"><table style="width:100%;text-align:left;font-size:13px"><thead><tr><th>Mode / frames / seed set</th><th>Games played</th><th>Avg decisions survived</th><th>Avg bricks</th><th>Avg time alive</th><th>Avg latency</th><th>Input / decision</th><th>Stale</th><th>Errors</th><th>Dash chosen / choices</th></tr></thead><tbody id="modeResults"></tbody></table></div></div>
+<p><small>Real-time: 8/12/16 target zones + stay; normal 4 px/frame, optional dash 12 px/frame. Interval is the minimum time between request starts (0 = immediately after each reply). Stop discards pending replies. Paused baseline uses left/right/stay for K frames; C, D, F or G enables target zones with the same K-frame hold. Decision budget is total since Reset. A miss ends the game; no lives or respawns. Auto-restart waits for the old reply to settle and respects both budgets. Same seeds replays launches from game 1 on Reset or mode changes; unchecked selects a new seed on Reset. New seed starts a fresh sequence. Input modes compare full state, images only, or both. Images are recent decision snapshots, oldest first; missing history is padded and labeled. Results below survive Reset for this tab session.</small></p><p id="realtimeStats" aria-live="polite"></p><div id="snapshotStrip" style="display:flex;gap:8px;overflow:auto"></div><ol id="breakLog" style="max-height:220px;overflow:auto"></ol></div>
+<div class="card"><h2>Per-game · session comparison</h2><p><small>Completed games only for survival averages; interrupted games are excluded. Decisions survived = valid actions applied while still alive (paused: survived the resulting K frames). Time alive = simulation seconds, excluding inference pauses. Grouped by play mode, input, images/K, speed, seed set, A–G toggles, zone selection, controller, age and interval. Latency/cost/stale include all replies, including discarded end-of-game replies. Input cost uses the supplied $0.10/M token estimate; unknown usage is excluded and counted. Output charges excluded.</small></p><div style="overflow:auto"><table style="width:100%;text-align:left;font-size:13px"><thead><tr><th>Mode / frames / seed set</th><th>Games played</th><th>Avg decisions survived</th><th>Avg bricks</th><th>Avg time alive</th><th>Avg latency</th><th>Input / decision</th><th>Stale</th><th>Errors</th><th>Dash chosen / choices</th></tr></thead><tbody id="modeResults"></tbody></table></div></div>
 <div class="card"><h2>Auto-play · screenshot → decision → move</h2><p class="muted">Blue player P → green exit X. Avoid the red enemy E and dark walls. North is up; enemy stays still.</p>
 <canvas id="world" width="360" height="360" aria-label="Six by six grid world showing the player, enemy, walls and exit"></canvas>
 <div class="row"><label for="turns" style="margin:0">Max turns</label><input id="turns" type="number" min="1" max="50" value="12"><button id="auto" class="primary">Auto-play</button><button id="stop" disabled>Stop</button><button id="reset">Reset grid</button></div>
@@ -60,7 +63,7 @@
 <details class="card"><summary>What you are seeing</summary><p>This is a diagnostic playground, not the full protocol endpoint. <code>POST /decide</code> wraps the small RESTAP response with provider diagnostics. These panels show inputs and outputs, not hidden model reasoning.</p><p>Only an explicit OpenAI refusal becomes <code>action: null</code>. A chosen <code>wait</code> advances a grid turn. Null pauses turn-based play; real-time keeps its previous target. Invalid output, provider failures and timeouts are errors.</p><p><a href="https://developers.openai.com/api/docs/guides/decisions" target="_blank" rel="noreferrer">Official OpenAI Decisions documentation</a></p></details>
 </section></main>
 <script type="module">
-import {freshBreakout, seededRandom, finished, actionsFor, advanceFrame, inputCost, targetActions, targetFor, acceptDecision, frameClock, tuningOptions, zoneCount, actionSpeed, observationState, breakoutObjective, perfectAction} from "/breakout.js";
+import {freshBreakout, seededRandom, finished, actionsFor, advanceFrame, inputCost, targetActions, targetFor, decisionTarget, acceptDecision, frameClock, tuningOptions, zoneCount, actionSpeed, observationState, breakoutObjective, perfectAction} from "/breakout.js";
 const $ = id => document.getElementById(id);
 const pretty = value => JSON.stringify(value, null, 2);
 const gridActions = ['north','south','east','west','wait'].map(id => ({id,description:id==='wait'?'Stay in place for one turn.':`Move one tile ${id}; blocked by walls or grid edges.`}));
@@ -179,8 +182,8 @@ const modeResults=new Map();
 let activeResult=null;
 let rtStats={completed:0,errors:0,latency:0,stale:0,discarded:0,elapsed:0}, activeSince=null;
 const consumed=new Set();
-const tuningIds=['tuneA','tuneB','tuneC','tuneD','tuneE','zonePrecision','controller'];
-function tuning(){return tuningOptions({instructions:$('tuneA').checked,facts:$('tuneB').checked,dash:$('tuneC').checked,precision:$('tuneD').checked,assist:$('tuneE').checked,zones:$('zonePrecision').value});}
+const tuningIds=['tuneA','tuneB','tuneC','tuneD','tuneE','tuneF','tuneG','zonePrecision','controller'];
+function tuning(){return tuningOptions({instructions:$('tuneA').checked,facts:$('tuneB').checked,dash:$('tuneC').checked,precision:$('tuneD').checked,assist:$('tuneE').checked,safe:$('tuneF').checked,weighted:$('tuneG').checked,zones:$('zonePrecision').value});}
 
 function modeControls(){for(const id of tuningIds)$(id).disabled=busy;$('zonePrecision').disabled=busy||!$('tuneD').checked;const realtime=$('breakMode').value==='realtime';$('frames').disabled=busy||realtime;$('breakStep').disabled=busy||realtime;for(const id of ['maxAge','decisionInterval'])$(id).disabled=busy||!realtime;$('inputMode').disabled=busy;$('frameCount').disabled=busy||$('inputMode').value==='state';}
 function drawModeResults(){
@@ -194,7 +197,7 @@ function drawModeResults(){
 function drawRealtimeStats(){
  drawModeResults();
  const seconds=(rtStats.elapsed+(activeSince===null?0:performance.now()-activeSince))/1000;
- $('realtimeStats').textContent=`Last decision ${lastFrameCount??"—"} frame(s) · Target ${targetZone} · ${(seconds?rtStats.completed/seconds:0).toFixed(2)} decisions/s · Errors ${rtStats.errors} · Average latency ${rtStats.completed?Math.round(rtStats.latency/rtStats.completed):0} ms · Stale ${rtStats.stale} / discarded ${rtStats.discarded} · Running input cost $${totalCost.toFixed(8)}${unknownCosts?' + unknown usage':''}`;
+ $('realtimeStats').textContent=`Last decision ${lastFrameCount??"—"} frame(s) · Target ${targetZone} (${$('controller').value==='perfect'?'Perfect controller':'model action'})${tuning().weighted?' · G target center x='+ (target+game.paddle.width/2).toFixed(1):''} · ${(seconds?rtStats.completed/seconds:0).toFixed(2)} decisions/s · Errors ${rtStats.errors} · Average latency ${rtStats.completed?Math.round(rtStats.latency/rtStats.completed):0} ms · Stale ${rtStats.stale} / discarded ${rtStats.discarded} · Running input cost $${totalCost.toFixed(8)}${unknownCosts?' + unknown usage':''}`;
 }
 function stopBreakout(){
  breakRunning=false;breakGeneration++;cancelAnimationFrame(animation);wakeDecision?.();
@@ -203,7 +206,7 @@ function stopBreakout(){
 }
 function selectResult(){
  const input=$('inputMode').value,images=input==='state'?0:Number($('frameCount').value),mode=$('breakMode').value;
- const label=`${mode} · ${{state:'State only',images:'Images only',both:'State + images'}[input]} · ${images} images${mode==='paused'?' · K='+$('frames').value:''} · ${$('gameSpeed').value}x · seed ${$('seed').value} · A–E ${Object.values(tuning()).slice(0,5).map(Number).join('')} · zones ${zoneCount(tuning())} (selected ${tuning().zones}) · ${$('controller').value||'model'} · age ${$('maxAge').value} ms · interval ${$('decisionInterval').value} ms`;
+ const label=`${mode} · ${{state:'State only',images:'Images only',both:'State + images'}[input]} · ${images} images${mode==='paused'?' · K='+$('frames').value:''} · ${$('gameSpeed').value}x · seed ${$('seed').value} · A–G ${Object.values(tuning()).slice(0,7).map(Number).join('')} · zones ${zoneCount(tuning())} (selected ${tuning().zones}) · ${$('controller').value||'model'} · age ${$('maxAge').value} ms · interval ${$('decisionInterval').value} ms`;
  if(!modeResults.has(label))modeResults.set(label,{label,perfect:$('controller').value==='perfect',completed:0,errors:0,latency:0,cost:0,known:0,unknown:0,stale:0,elapsed:0,contacts:0,misses:0,games:0,decisions:0,bricks:0,alive:0,dash:0,choices:0});
  activeResult=modeResults.get(label);
 }
@@ -281,10 +284,10 @@ async function runRealtime(){
    const cost=inputCost(result.openai_response);if(cost===null)activeResult.unknown++;else{activeResult.known++;activeResult.cost+=cost;}
   }
   if(verdict.status==='stale')activeResult.stale++;
-  if(req.actions.some(a=>a.id===result.restap?.action)){activeResult.choices++;if(result.restap.action.startsWith('dash-to-'))activeResult.dash++;}
-  if(verdict.status==='applied'){gameDecisions++;target=targetFor(game,result.restap.action,options);targetZone=result.restap.action;}
+  if(req.actions.some(a=>a.id===result.restap?.action)){activeResult.choices++;if(result.restap.action.startsWith('dash-'))activeResult.dash++;}
+  if(verdict.status==='applied'){gameDecisions++;target=decisionTarget(game,result.restap,options).target;targetZone=result.restap.action;}
   else if(!failed){rtStats.discarded++;if(verdict.status==='stale')rtStats.stale++;}
-  const note=`Game ${gameNumber} · ${frameCount} frame(s) · Frame ${current.frame} → ${game.frame}: ${result.restap?.action??result.error??'null'} · ${verdict.status} · latency ${Math.round(receivedAt-capturedAt)} ms · age at ${verdict.status==='applied'?'apply':'discard'} ${Math.round(verdict.ageMs)} ms`;
+  const note=`Game ${gameNumber} · ${frameCount} frame(s) · Frame ${current.frame} → ${game.frame}: ${result.restap?.action??result.error??'null'} · ${verdict.status}${options.weighted&&verdict.status==='applied'?' · G target center x='+ (target+game.paddle.width/2).toFixed(1)+' ('+decisionTarget(game,result.restap,options).policy+')':''} · latency ${Math.round(receivedAt-capturedAt)} ms · age at ${verdict.status==='applied'?'apply':'discard'} ${Math.round(verdict.ageMs)} ms`;
   caption.textContent=note;card.append(scoreView(result.restap));breakNote(note);drawRealtimeStats();
   // Failed attempts never count as decisions. Pause repeated failures and let Stop cancel backoff.
   if(!breakRunning)break;
@@ -325,7 +328,7 @@ async function runBreakout(single=false){
    const shots=snapshotsHistory.slice(-imageCount);while(shots.length<imageCount)shots.unshift(shots[0]);
    context.images=shots.map(s=>s.image);context.text+=' '+shots.map((s,i)=>`Image ${i+1}: frame ${s.frame}`).join('; ')+'. Repeated frame labels are duplicate snapshots.';
   }
-  const req={id:crypto.randomUUID(),context,actions:options.dash||options.precision?targetActions(game,options):actionsFor(game,k)};
+  const req={id:crypto.randomUUID(),context,actions:options.dash||options.precision||options.safe||options.weighted?targetActions(game,options):actionsFor(game,k)};
   fill(req);breakTurn++;const result=await decide(req);
   lastFrameCount=imageCount;
   const failed=!!result.error||result.restap?.id!==req.id||(result.restap?.action!==null&&!req.actions.some(a=>a.id===result.restap?.action));
@@ -336,8 +339,11 @@ async function runBreakout(single=false){
   breakNote(`Game ${gameNumber} · Turn ${breakTurn}: ${result.error??String(action)} · ${result.latency_ms} ms · input ${cost===null?'unknown':'$'+cost.toFixed(8)}`);
   if(result.error||action===null){breakNote('Paused; no frames advanced.');break;}
   if(result.restap?.id!==req.id||!req.actions.some(a=>a.id===action)){breakNote('Invalid response; no frames advanced.');break;}
-  activeResult.choices++;if(action.startsWith('dash-to-'))activeResult.dash++;
-  const move=options.dash||options.precision?targetFor(game,action,options):action;
+  activeResult.choices++;if(action.startsWith('dash-'))activeResult.dash++;
+  const move=options.dash||options.precision||options.safe||options.weighted?decisionTarget(game,result.restap,options).target:action;
+  targetZone=action;if(typeof move==='number')target=move;
+  if(options.weighted)breakNote(`Model action ${action} · G target center x=${(move+game.paddle.width/2).toFixed(1)} (${decisionTarget(game,result.restap,options).policy})`);
+  drawRealtimeStats();
   breakEvents=[];
   const tick=frameClock();let frames=0;
   while(frames<k&&breakRunning&&!finished(game)){const now=await new Promise(requestAnimationFrame);if(!breakRunning)break;tick(now,Number($('gameSpeed').value),()=>{if(frames<k&&!finished(game)){advanceFrame(game,move,breakEvents,undefined,actionSpeed(action));frames++;}});drawBreakout();}

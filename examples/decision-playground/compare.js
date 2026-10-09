@@ -4,7 +4,7 @@
 import {pathToFileURL} from 'node:url';
 import {writeFileSync} from 'node:fs';
 import {createApp} from './server.js';
-import {freshBreakout,seededRandom,finished,advanceFrame,targetActions,targetFor,actionSpeed,observationState,breakoutObjective,perfectAction,acceptDecision} from './breakout.js';
+import {freshBreakout,seededRandom,finished,advanceFrame,targetActions,targetFor,decisionTarget,actionSpeed,observationState,breakoutObjective,perfectAction,acceptDecision} from './breakout.js';
 
 export const configurations=[
  {name:'Baseline (all off)',options:{}},
@@ -15,6 +15,15 @@ export const configurations=[
  {name:'E with model',options:{assist:true}},
  {name:'Perfect at model cadence',options:{assist:true},cadence:true},
 ];
+export const safestConfigurations=[
+ {name:'Baseline',options:{}},
+ {name:'F',options:{safe:true}},
+ {name:'G',options:{weighted:true}},
+ {name:'F+G',options:{safe:true,weighted:true}},
+ {name:'F+G+E',options:{safe:true,weighted:true,assist:true}},
+ {name:'F+G+C',options:{safe:true,weighted:true,dash:true}},
+];
+export function percentile(values,p){const sorted=[...values].sort((a,b)=>a-b);return sorted.length?sorted[Math.max(0,Math.ceil(p*sorted.length)-1)]:null;}
 export async function compareGame({seed,configuration,decide,maxCalls=20,intervalMs=0,maxAgeMs=750,maxFrames=3600,latencySamples=[],stopAtBudget=false}) {
  if(configuration.cadence&&(!latencySamples.length||latencySamples.some(ms=>!Number.isFinite(ms)||ms<=0)))throw Error('Cadence baseline requires positive measured latencies');
  const options=configuration.options,game=freshBreakout(seededRandom(seed));
@@ -37,10 +46,10 @@ export async function compareGame({seed,configuration,decide,maxCalls=20,interva
   latencies.push(latency);advance(latency);
   const verdict=acceptDecision({request,result,now:elapsed,maxAgeMs,active:true,game,seen});
   if(result.error)errors++;
-  if(req.actions.some(a=>a.id===result.restap?.action)){choices++;if(result.restap.action.startsWith('dash-to-'))dash++;}
+  if(req.actions.some(a=>a.id===result.restap?.action)){choices++;if(result.restap.action.startsWith('dash-'))dash++;}
   if(verdict.status==='stale')stale++;
-  if(verdict.status==='applied'){survived++;action=result.restap.action;target=targetFor(game,action,options);}
-  trace.push({frame:req.context.state.frame,returnFrame:game.frame,action:result.restap?.action,status:verdict.status,latencyMs:latency,error:result.error??null});
+  if(verdict.status==='applied'){survived++;action=result.restap.action;target=decisionTarget(game,result.restap,options).target;}
+  trace.push({frame:req.context.state.frame,returnFrame:game.frame,action:result.restap?.action,status:verdict.status,gTargetX:options.weighted&&verdict.status==='applied'?target+game.paddle.width/2:null,policy:verdict.status==='applied'?decisionTarget(game,result.restap,options).policy:null,latencyMs:latency,error:result.error??null});
   advance(Math.max(0,intervalMs-latency));
  }
  const budgetLimited=!configuration.perfect&&!configuration.cadence&&!finished(game)&&game.frame<maxFrames&&calls>=maxCalls;
@@ -50,9 +59,9 @@ export async function compareGame({seed,configuration,decide,maxCalls=20,interva
  while(!stopAtBudget&&!finished(game)&&game.frame<maxFrames)advance(1000/60+0.000001);
  return {configuration:configuration.name,seed,calls,decisionsSurvived:survived,bricks:24-game.bricksLeft,timeAlive:game.frame/60,dash,choices,stale,errors,latencies,budgetLimited,frameAtBudget,censored:!finished(game),outcome:finished(game)?game.gameOver?'miss':'win':budgetLimited?'call limit':'time limit',trace};
 }
-export function summarize(games){return configurations.map(c=>{
+export function summarize(games,configs=configurations){return configs.map(c=>{
  const rows=games.filter(g=>g.configuration===c.name),sum=k=>rows.reduce((n,g)=>n+g[k],0),latencies=rows.flatMap(g=>g.latencies);
- return {configuration:c.name,games:rows.length,calls:sum('calls'),averageDecisionsSurvived:c.perfect||c.cadence?null:sum('decisionsSurvived')/rows.length,averageBricks:sum('bricks')/rows.length,averageTimeAlive:sum('timeAlive')/rows.length,dash:sum('dash'),choices:sum('choices'),averageLatencyMs:latencies.length?latencies.reduce((a,b)=>a+b)/latencies.length:0,budgetLimited:rows.filter(g=>g.budgetLimited).length,censored:rows.filter(g=>g.censored).length,errors:sum('errors'),stale:sum('stale')};});}
+ return {configuration:c.name,games:rows.length,calls:sum('calls'),averageDecisionsSurvived:c.perfect||c.cadence?null:sum('decisionsSurvived')/rows.length,averageBricks:sum('bricks')/rows.length,averageTimeAlive:sum('timeAlive')/rows.length,dash:sum('dash'),choices:sum('choices'),averageLatencyMs:latencies.length?latencies.reduce((a,b)=>a+b)/latencies.length:0,medianLatencyMs:percentile(latencies,.5),p90LatencyMs:percentile(latencies,.9),budgetLimited:rows.filter(g=>g.budgetLimited).length,censored:rows.filter(g=>g.censored).length,errors:sum('errors'),stale:sum('stale')};});}
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  if(!process.argv.includes('--live')||!process.env.OPENAI_API_KEY)throw Error('Opt in with --live and OPENAI_API_KEY.');
@@ -63,22 +72,15 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const url=`http://127.0.0.1:${server.address().port}/decide`,games=[],seeds=[1,2,3,4,5];
  const decide=async req=>(await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(req)})).json();
  try{
-  const models=configurations.filter(c=>!c.perfect&&!c.cadence);
-  const settings={seeds,totalLiveCallLimit:500,input:'state',intervalMs:0,maxAgeMs:750,speed:1,maxFrames:3600,tail:'Stop at call cap and mark censored; no held-action tail.',cadenceReplay:'Cycle each paired model game latency sequence; same options, seed, and stale-reply cutoff.'};
-  const save=()=>writeFileSync(output,JSON.stringify({settings,games,summary:summarize(games)},null,2));
-  let remaining=500,remainingGames=seeds.length*models.length;
-  // Interleave by seed; redistribute unused allowances without exceeding 500.
-  for(const seed of seeds)for(const configuration of models){
-   const allowance=Math.floor(remaining/remainingGames);
-   const game=await compareGame({seed,configuration,decide,maxCalls:allowance,stopAtBudget:true});
-   remaining-=game.calls;remainingGames--;game.callAllowance=allowance;games.push(game);save();
+  const models=safestConfigurations;
+  const settings={seeds,gamesPerConfiguration:5,totalLiveCallLimit:400,input:'state',intervalMs:0,betweenGamesMs:2000,maxAgeMs:750,speed:1,maxFrames:3600,tail:'Stop at call cap and mark censored; no held-action tail.',allocation:'Equal 13 calls/game; 390 maximum attempts. Rotate configuration order by seed.'};
+  const save=()=>writeFileSync(output,JSON.stringify({settings,games,summary:summarize(games,models)},null,2));
+  for(const seed of seeds)for(let index=0;index<models.length;index++){
+   const configuration=models[(index+seed-1)%models.length];
+   if(games.length)await new Promise(resolve=>setTimeout(resolve,settings.betweenGamesMs));
+   const game=await compareGame({seed,configuration,decide,maxCalls:13,stopAtBudget:true});
+   game.callAllowance=13;games.push(game);save();
    console.log(JSON.stringify({configuration:game.configuration,seed,calls:game.calls,bricks:game.bricks,timeAlive:game.timeAlive,budgetLimited:game.budgetLimited,censored:game.censored,errors:game.errors}));
   }
-  for(const configuration of models)for(const seed of seeds){
-   const paired=games.find(g=>g.configuration===configuration.name&&g.seed===seed);
-   const game=await compareGame({seed,configuration:{...configurations.find(c=>c.cadence),options:configuration.options},latencySamples:paired.latencies});
-   game.pairedConfiguration=configuration.name;games.push(game);save();
-  }
-  for(const seed of seeds){games.push(await compareGame({seed,configuration:configurations.find(c=>c.perfect)}));save();}
  }finally{await new Promise(resolve=>server.close(resolve));}
 }

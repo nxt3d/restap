@@ -34,21 +34,43 @@ export function inputCost(response){const n=response?.usage?.input_tokens;return
 
 // Zones describe paddle CENTER positions; physics takes a clamped left edge.
 export function tuningOptions(o={}) {
- return {instructions:!!o.instructions,facts:!!o.facts,dash:!!o.dash,precision:!!o.precision,assist:!!o.assist,zones:[8,12,16].includes(Number(o.zones))?Number(o.zones):8};
+ return {instructions:!!o.instructions,facts:!!o.facts,dash:!!o.dash,precision:!!o.precision,assist:!!o.assist,safe:!!o.safe,weighted:!!o.weighted,zones:[8,12,16].includes(Number(o.zones))?Number(o.zones):8};
 }
 export const zoneCount = o => o?.precision ? tuningOptions(o).zones : 8;
 export function targetActions(s,o={}) {
  const count=zoneCount(o), actions=[];
  for(const dash of o.dash?[false,true]:[false])for(let i=1;i<=count;i++)actions.push({id:`${dash?'dash-to-':''}zone-${i}`,description:`Move the paddle center to zone ${i} of ${count} (x=${(i-1)*s.width/count}–${i*s.width/count} px), targeting x=${(i-.5)*s.width/count} px, clamped at walls. Move at up to ${dash?12:4} px per simulation frame and hold there until a new decision.`});
+ if(o.safe)for(const dash of o.dash?[false,true]:[false])actions.push({id:dash?'dash-center':'center',description:`Return the paddle to the center of the field (x=${s.width/2} px), the safest waiting position with shortest worst-case travel to any landing point, at up to ${dash?12:4} px/frame and hold.`});
  return [...actions,{id:'stay',description:'Stop moving the paddle at its current position when this answer arrives and hold there until a new decision.'}];
 }
 export function targetFor(s,action,o={}) {
  if(action==='stay')return s.paddle.x;
+ if(o.safe&&(action==='center'||(action==='dash-center'&&o.dash)))return (s.width-s.paddle.width)/2;
  const match=/^(dash-to-)?zone-([1-9][0-9]*)$/.exec(action), count=zoneCount(o);
  if(!match||Number(match[2])>count||(match[1]&&!o.dash))throw Error('Invalid target action');
  return Math.max(0,Math.min(s.width-s.paddle.width,(Number(match[2])-.5)*s.width/count-s.paddle.width/2));
 }
-export const actionSpeed = action => action?.startsWith('dash-to-') ? 12 : 4;
+export const actionSpeed = action => action?.startsWith('dash-') ? 12 : 4;
+// Caller policy: probabilities express weights over nominal paddle-center positions.
+// A lower weighted median deterministically resolves an exactly-half tie. Clamp
+// only after choosing the median; stay is evaluated when the answer arrives.
+export function decisionTarget(s,decision,o={}) {
+ const fallback=()=>({target:targetFor(s,decision.action,o),policy:'chosen action'});
+ if(!o.weighted||!decision.probabilities)return fallback();
+ const offered=new Set(targetActions(s,o).map(a=>a.id)),points=[];
+ for(const [id,weight] of Object.entries(decision.probabilities)){
+  if(!offered.has(id)||!Number.isFinite(weight)||weight<=0)continue;
+  let x;
+  if(id==='stay')x=s.paddle.x+s.paddle.width/2;
+  else if(id==='center'||id==='dash-center')x=s.width/2;
+  else {const match=/^(?:dash-to-)?zone-([1-9][0-9]*)$/.exec(id);if(!match)continue;x=(Number(match[1])-.5)*s.width/zoneCount(o);}
+  points.push({x,weight});
+ }
+ const total=points.reduce((sum,p)=>sum+p.weight,0);if(!total)return fallback();
+ points.sort((a,b)=>a.x-b.x);let cumulative=0;
+ for(const point of points){cumulative+=point.weight;if(cumulative>=total/2)return {target:Math.max(0,Math.min(s.width-s.paddle.width,point.x-s.paddle.width/2)),policy:'weighted median'};}
+ return fallback();
+}
 // Wall-only projection: brick collisions can change this estimate. Contact is at
 // ball-center y = paddle.y - radius, not the paddle's center or bottom.
 export function framesToPaddle(s) {
@@ -71,9 +93,10 @@ export function observationState(s,o={}) {
  return state;
 }
 export function breakoutObjective(o={},mode='realtime',k=20) {
+ const defense=o.safe?' This is defense. While the ball is moving up/away, return toward the safest position (center, or the middle of the plausible landing range). When the ball is coming down, commit to the predicted landing zone.':'';
  const baseline=mode==='realtime'?'Play continuously running Breakout. Clear the bricks and avoid missing the ball by keeping the paddle under the predicted ball intercept at paddle height, accounting for wall bounces and observation delay. Choose a target zone and hold until replaced.':'Play Breakout: clear all bricks and avoid missing the ball. Simulation is paused during inference. Each action advances exactly '+k+' frames unless the game ends.';
- if(!o.instructions)return baseline;
- return `Clear the bricks and keep the ball alive. The board is 480 by 360 px: x grows rightward and y grows downward. The paddle top is y=330; its width is 90 px and its maximum normal speed is 4 px/frame${o.dash?', with dash at 12 px/frame (3x)':''}. The ball radius is 6 px, so paddle contact is at ball-center y=324. Launch ball speed is about 3.84 px/frame; paddle bounces change horizontal velocity, so use the current velocity when available. Physics runs at 60 simulation frames/second, scaled by game speed. Side walls reflect horizontal velocity at x=6 and x=474; the top reflects vertical velocity at y=6. Bricks also bounce the ball. ${mode==='realtime'?'Decision latency is about 150–500 ms while the game keeps moving: aim for where the ball will be when your action arrives and allow time for paddle travel.':'Simulation pauses during decision latency (about 150–500 ms); then the action runs for '+k+' frames.'} When the ball is moving up, start moving NOW to where it will come down after bouncing off the top and side walls; don't just follow the ball's current x. Pre-position early and update after brick bounces. ${mode==='paused'&&!o.dash&&!o.precision?'Choose left, right, or stay for the next '+k+' frames.':'Choose a target and hold until replaced; stay stops at the current position.'}${o.dash?' Choose urgency yourself: dash when normal movement cannot arrive in time.':''}`;
+ if(!o.instructions)return baseline+defense;
+ return `Clear the bricks and keep the ball alive. The board is 480 by 360 px: x grows rightward and y grows downward. The paddle top is y=330; its width is 90 px and its maximum normal speed is 4 px/frame${o.dash?', with dash at 12 px/frame (3x)':''}. The ball radius is 6 px, so paddle contact is at ball-center y=324. Launch ball speed is about 3.84 px/frame; paddle bounces change horizontal velocity, so use the current velocity when available. Physics runs at 60 simulation frames/second, scaled by game speed. Side walls reflect horizontal velocity at x=6 and x=474; the top reflects vertical velocity at y=6. Bricks also bounce the ball. ${mode==='realtime'?'Decision latency is about 150–500 ms while the game keeps moving: aim for where the ball will be when your action arrives and allow time for paddle travel.':'Simulation pauses during decision latency (about 150–500 ms); then the action runs for '+k+' frames.'} ${o.safe?defense:"When the ball is moving up, start moving NOW to where it will come down after bouncing off the top and side walls; don't just follow the ball's current x. Pre-position early and update after brick bounces."} ${mode==='paused'&&!o.dash&&!o.precision&&!o.safe&&!o.weighted?'Choose left, right, or stay for the next '+k+' frames.':'Choose a target and hold until replaced; stay stops at the current position.'}${o.dash?' Choose urgency yourself: dash when normal movement cannot arrive in time.':''}`;
 }
 // Re-evaluated every physics frame; an ideal-information controller, not a model.
 export function perfectAction(s,o={}) {

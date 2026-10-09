@@ -85,7 +85,7 @@ describe('input mode isolation and session comparison',()=>{
   expect(Object.keys(c).sort()).toEqual(['state','text']);expect(c.state).toMatchObject({width:480,height:360,ball:{x:240,y:323},paddle:{x:195,width:90},score:0,gameOver:false,frame:0});expect(c.state.bricks).toHaveLength(24);expect(c.text).not.toMatch(/Image|frame 0/);
   h.advance(100);await h.reply(0);await done;
   const row=()=>h.el('modeResults').children[0].children.map(c=>c.textContent);
-  expect(row()).toEqual(['realtime · State only · 0 images · 1x · seed 1 · A–E 00000 · zones 8 (selected 8) · model · age 750 ms · interval 0 ms','0','—','—','—','100 ms','$0.00001000','0.0%','0','0 / 1']);
+  expect(row()).toEqual(['realtime · State only · 0 images · 1x · seed 1 · A–G 0000000 · zones 8 (selected 8) · model · age 750 ms · interval 0 ms','0','—','—','—','100 ms','$0.00001000','0.0%','0','0 / 1']);
   h.el('breakReset').onclick();expect(row()[1]).toBe('0');
   h.el('inputMode').value='images';const second=h.el('breakPlay').onclick();await h.reply(1);await second;
   expect(h.el('modeResults').children).toHaveLength(2);expect(row()[1]).toBe('0');
@@ -237,7 +237,7 @@ it('synchronizes an edited seed at Play even before a change event is dispatched
 });
 
 describe('independent tuning controls',()=>{
- it.each(['tuneA','tuneB','tuneC','tuneD','tuneE'])('isolates %s and preserves the grouping after reset',async id=>{
+ it.each(['tuneA','tuneB','tuneC','tuneD','tuneE','tuneF','tuneG'])('isolates %s and preserves the grouping after reset',async id=>{
   const h=harness();h.el('inputMode').value='state';h.el(id).checked=true;h.el('zonePrecision').value='16';h.el('breakTurns').value='1';
   const done=h.el('breakPlay').onclick(),req=h.pending[0].req;
   expect(req.context.text.includes('start moving NOW')).toBe(id==='tuneA');
@@ -264,4 +264,25 @@ describe('independent tuning controls',()=>{
   h.el('breakPause').onclick();await done;const frame=h.eval('game.frame');h.advance(100);expect(h.eval('game.frame')).toBe(frame);
   expect(h.el('modeResults').children[0].children[2].textContent).toBe('N/A (no model)');
  });
+});
+
+it('displays the model decision separately from G and moves toward its median',async()=>{
+ const h=harness();h.el('tuneF').checked=true;h.el('tuneG').checked=true;
+ const done=h.el('breakPlay').onclick();
+ expect(h.pending[0].req.actions.map(a=>a.id)).toContain('center');
+ expect(h.pending[0].req.context.text).toContain('This is defense');
+ await h.reply(0,'zone-8',{probabilities:{'zone-1':.6,'zone-8':.4}});
+ expect(h.eval('targetZone')).toBe('zone-8');expect(h.eval('target')).toBe(0);
+ expect(h.el('realtimeStats').textContent).toContain('G target center x=45.0');
+ expect(h.el('breakLog').lastChild.textContent).toContain('weighted median');
+ h.advance(0);h.advance(17);expect(h.eval('game.paddle.x')).toBe(191);
+ h.el('breakPause').onclick();await h.reply(1);await done;
+});
+it('offers positional choices in paused G and falls back when probabilities are absent',async()=>{
+ const h=harness();h.el('breakMode').value='paused';h.el('tuneG').checked=true;
+ const done=h.el('breakStep').onclick();expect(h.pending[0].req.actions.map(a=>a.id)).toContain('zone-8');
+ await h.reply(0,'zone-8');
+ expect(h.el('breakLog').lastChild.textContent).toContain('chosen action');
+ for(let i=0;i<45;i++){h.advance(17);await h.flush();}await done;
+ expect(h.eval('game.paddle.x')).toBe(275);
 });

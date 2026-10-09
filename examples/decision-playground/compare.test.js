@@ -35,3 +35,13 @@ it('discards delayed Perfect replies at the same stale threshold',async()=>{
  expect(game.trace[0]).toMatchObject({frame:0,returnFrame:48,status:'stale'});
  expect(game.decisionsSurvived).toBe(0);
 });
+
+import {safestConfigurations,percentile} from './compare.js';
+it('logs G separately and summarizes latency distribution without additional calls',async()=>{
+ const configuration=safestConfigurations.find(c=>c.name==='F+G');
+ const game=await compareGame({seed:1,configuration,maxCalls:1,stopAtBudget:true,decide:async req=>({restap:{id:req.id,action:'zone-8',probabilities:{center:1}}})});
+ expect(game.trace[0]).toMatchObject({action:'zone-8',gTargetX:240,policy:'weighted median'});
+ const summary=summarize([{...game,latencies:[10,30,20,100]}],[configuration])[0];
+ expect(summary).toMatchObject({medianLatencyMs:20,p90LatencyMs:100,averageLatencyMs:40});
+ expect(percentile([],.9)).toBeNull();
+});

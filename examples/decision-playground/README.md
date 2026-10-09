@@ -20,7 +20,7 @@ At startup the server uses trimmed `OPENAI_API_KEY` first, then falls back to th
 - **One miss ends a game:** “Game over: missed the ball” appears on the canvas and in the log. No lives or respawn. Physics stops immediately and an outstanding reply is discarded before any next game starts.
 - **Seeded launches:** every game centers the paddle and launches from its center, just above it, at the normal speed and a seeded angle in 30–150° above horizontal. The visible uint32 Seed is editable. **Same seeds** (default on) replays the identical sequence from game 1 on Reset and configuration changes; unchecked chooses a fresh seed. **New seed** always selects a new sequence. Changing input/play mode, image count, K, speed, any tuning setting, controller, max age or interval resets the game and decision budget to avoid mixing configurations within a game. It retains comparison results and game-end log markers.
 - **Auto-restart** (default off) plays up to the **Games budget** (default 10; includes the current game). The decision budget is shared across all games since Reset; neither budget resets automatically. Stop cancels the series, including when a terminal game's reply is pending. Step never auto-restarts.
-- The session table groups by play mode, input mode, images, paused K, speed, seed set, all five tuning flags, selected/effective zones, controller, max age and interval. It reports completed games, average decisions survived, average bricks cleared and average simulation seconds alive (frame / 60, excluding paused inference), plus average latency, estimated input cost per known-usage reply, stale percentage and errors. A real-time decision is survived if its valid action is applied while alive; paused mode counts it only after surviving its full K frames. Interrupted games are excluded from survival averages. Latency/cost/stale include discarded end-of-game replies. Unknown usage is counted explicitly. Results and game-end log markers survive Reset; reloading clears them. Grid/manual calls do not enter this table.
+- The session table groups by play mode, input mode, images, paused K, speed, seed set, all seven tuning flags, selected/effective zones, controller, max age and interval. It reports completed games, average decisions survived, average bricks cleared and average simulation seconds alive (frame / 60, excluding paused inference), plus average latency, estimated input cost per known-usage reply, stale percentage and errors. A real-time decision is survived if its valid action is applied while alive; paused mode counts it only after surviving its full K frames. Interrupted games are excluded from survival averages. Latency/cost/stale include discarded end-of-game replies. Unknown usage is counted explicitly. Results and game-end log markers survive Reset; reloading clears them. Grid/manual calls do not enter this table.
 - **Reliability:** max snapshot age defaults to 750 ms and uses monotonic wall time, independent of game speed. Replies at or beyond the deadline are stale. Every ID is consumed at most once, including discarded replies. Wrong IDs, unoffered actions, replies after Stop/game end or from a previous game are rejected. Refusals retain the current target while fresh decisions continue. Errors wait 500 ms, then 1000 ms before a fresh request; three consecutive errors pause auto-play with a backend/key diagnostic. Success resets backoff. Errors are counted separately from decisions in live stats and the comparison table, and excluded from decision latency, throughput and per-decision input cost; the game never silently substitutes an action. Reaching the decision budget stops the run.
 - The six-snapshot strip shows frame at capture/return, choice, image count, apply/discard status, browser round-trip latency and age at apply/discard. Summary shows the last decision’s image count, target, completed decisions per active second, average browser latency, stale/total discarded counts, and the tab's running input cost. Discarded calls still count toward cost and budget. The provider diagnostics separately show server latency.
 - **Paused** retains left/right/stay and K (1–120 frames); simulation freezes during inference, then animates exactly K frames (unless stopped/terminal). Step decision runs one block. Refusal/errors advance no frames.
@@ -59,11 +59,11 @@ npm run test:run
 
 All ordinary tests inject a mocked transport and never read the key file or call OpenAI. To opt into a live test, start the server with a key and use Decide or Auto-play.
 
-Optional backend `confidence` and complete `probabilities` are preserved in the RESTAP response and displayed as confidence plus probability bars in the result, run history, and real-time snapshot strip. Missing or invalid scores and partial distributions are omitted; refusal has neither field. Scores never select or replace an action. Mapping follows the [official Decisions API reference](https://developers.openai.com/api/reference/resources/decisions/methods/create): `confidence` and `probabilities: [{value, probability}]`.
+Optional backend `confidence` and complete `probabilities` are preserved in the RESTAP response and displayed as confidence plus probability bars in the result, run history, and real-time snapshot strip. Missing or invalid scores and partial distributions are omitted; refusal has neither field. The adapter never selects or replaces an action from scores. The optional Breakout G caller policy uses probabilities to select its own paddle target, while displaying the unchanged model decision. Mapping follows the [official Decisions API reference](https://developers.openai.com/api/reference/resources/decisions/methods/create): `confidence` and `probabilities: [{value, probability}]`.
 
 ## Independent Breakout tuning
 
-All five checkboxes default **off** and are retained in each comparison group.
+All seven checkboxes default **off** and are retained in each comparison group.
 Changing one resets the seeded episode, retaining prior groups in tab memory.
 
 - **A — Instructions:** explains downward-positive y, paddle y=330, radius/contact height, normal/dash paddle speed, launch ball speed and changing velocity, wall bounces, 150–500 ms expected decision latency, and early upward-ball pre-positioning. Paused instructions accurately state that inference freezes simulation.
@@ -74,23 +74,32 @@ Changing one resets the seeded episode, retaining prior groups in tab memory.
 
 **Perfect controller** bypasses all API calls and recomputes the predicted zone each physics frame. It uses the same 4 px/frame paddle limit, or 12 with C enabled, and D's effective zone count. It operates continuously even if Paused is selected; K/model decision budgets do not apply. Stop, game budget and auto-restart still apply. It reports N/A for model decisions and $0 API cost. This is an ideal-information baseline, not proof that every episode is winnable. Its wall-only projection and zone discretization are still approximations.
 
-Paused mode keeps left/right/stay when C and D are off; either enables target-zone actions held for the next K frames. B and E are still independent of this action selection.
+- **F — Safe-position defense:** adds `center` (normal speed) and, with C, `dash-center` (12 px/frame), returning to the field center and holding. The objective explains defensive waiting near center or the middle of the plausible landing range while the ball travels away, then committing to the predicted landing zone on descent. F replaces A's competing upward-flight strategy when both are on.
+- **G — Probability-weighted safest target:** caller policy only, with no protocol changes. The spec says `action` is the decision; this demo chooses its own target from the probability-weighted median of nominal zone centers, minimizing expected absolute travel under those weights. Normal/dash versions contribute to the same position; `stay` maps to the current paddle center at application time and `center`/`dash-center` to the field center. Non-positional/unoffered actions are ignored. An exactly-half tie uses the lower median; the resulting paddle position is clamped at walls. Missing probabilities or zero usable mass falls back to the chosen action. The model action still determines normal/dash speed. The screen and log show both the model action and G's applied target, including fallback status in the log. Stale, refused or invalid decisions do not apply either policy. This distribution over actions is a caller interpretation of landing uncertainty, not a calibrated landing forecast.
+
+Paused mode keeps left/right/stay when C, D, F and G are off; any of these enables target-zone actions held for the next K frames. B and E are still independent of this action selection.
 
 ## Bounded seeded live smoke comparison
 
 `compare.js --live --output /absolute/path/outside/repo/results.json` requires
 `OPENAI_API_KEY` explicitly set in the environment. Importing it and ordinary
 mocked tests never load credentials. It exercises the local adapter against
-OpenAI using seeds 1–5 for each of baseline, A+B, A+B+C, A+B+C+D16 and E+Perfect.
-It allows at most ten calls per model episode (200 total), uses state only,
-1x physics, a 1000 ms request-start interval and 750 ms stale threshold.
-These are comparison settings, not the page's default zero interval.
+OpenAI with five games per configuration, one on each seed 1–5: baseline, F, G,
+F+G, F+G+E (assist), and F+G+C (dash). All other toggles are off.
 
-The harness advances the shared 60 Hz physics through measured API round-trip
-latency, then simulates the remaining interval without sleeping. Requests are
-sequential and configurations are interleaved by seed. This is a live-provider
-simulation test, not a browser rendering benchmark. Any episode reaching its
-call cap holds its final action until termination and is marked `budgetLimited`;
-do not interpret that tail as continued model play. All episodes stop at 60
-simulation seconds and mark surviving episodes `censored`. Perfect uses zero
-calls. Raw per-game metrics and action/latency traces are saved incrementally.
+The harness uses state only, 1x physics, a zero request-start interval and a
+750 ms stale threshold. Games and calls run sequentially, sleeping 2000 ms
+between games; configuration order rotates by seed. Each game has the same
+13-call cap (390 maximum live attempts, below the 400-call budget). No retries
+or extra live reference runs consume additional calls.
+
+Shared 60 Hz physics advances through measured adapter round-trip latency.
+This is a live-provider simulation test, not a browser rendering benchmark.
+Episodes stop immediately at the call cap with `budgetLimited` and `censored`
+flags; there is no held-action tail. A 60-second simulation horizon also marks
+survivors censored. Time alive for censored games is an observed lower bound,
+not a completed survival time. Raw per-game model choices, G targets, policy
+sources, errors, and latencies are saved incrementally. Summaries report mean
+bricks/time alive and mean, median, and p90 latency (nearest-rank percentiles
+pooled across attempts, including stale and terminal replies). Interpret
+latency and call-cap differences alongside any apparent gameplay improvement.

@@ -70,3 +70,37 @@ describe('tuning physics and observations',()=>{
   expect(text).not.toContain('predictedLandingX');
  });
 });
+
+import {decisionTarget} from './breakout.js';
+describe('safe-position caller policies',()=>{
+ it('gates center and dash-center independently and holds the center',()=>{
+  const s=freshBreakout(),o={safe:true,dash:true};s.paddle.x=100;
+  expect(targetActions(s).some(a=>a.id==='center')).toBe(false);
+  expect(targetActions(s,{safe:true}).map(a=>a.id)).toContain('center');
+  expect(targetActions(s,{safe:true}).map(a=>a.id)).not.toContain('dash-center');
+  expect(targetActions(s,o).map(a=>a.id)).toContain('dash-center');
+  expect(()=>targetFor(s,'center')).toThrow();expect(()=>targetFor(s,'dash-center',{safe:true})).toThrow();
+  for(let i=0;i<12;i++)advanceFrame(s,targetFor(s,'dash-center',o),[],undefined,actionSpeed('dash-center'));
+  expect(s.paddle.x).toBe(195);expect(actionSpeed('center')).toBe(4);expect(actionSpeed('dash-center')).toBe(12);
+  expect(breakoutObjective({safe:true})).toContain('This is defense');
+  expect(breakoutObjective({safe:true,instructions:true})).not.toContain('start moving NOW');
+ });
+ it('uses the median, not argmax or mean, and minimizes expected absolute distance',()=>{
+  const s=freshBreakout(),decision={action:'zone-1',probabilities:{'zone-1':.4,'zone-4':.35,'zone-8':.25}};
+  const result=decisionTarget(s,decision,{weighted:true});expect(result).toEqual({target:165,policy:'weighted median'});
+  const cost=x=>.4*Math.abs(x-30)+.35*Math.abs(x-210)+.25*Math.abs(x-450);
+  for(let x=45;x<=435;x++)expect(cost(result.target+45)).toBeLessThanOrEqual(cost(x));
+  expect(decisionTarget(s,decision).target).toBe(0);expect(decision.action).toBe('zone-1');
+ });
+ it('maps stay at application time, aggregates dash weights, handles center, clamps and falls back',()=>{
+  const s=freshBreakout(),o={weighted:true,safe:true,dash:true};s.paddle.x=123;
+  const target=probabilities=>decisionTarget(s,{action:'zone-8',probabilities},o).target;
+  expect(target({stay:.6,'zone-1':.4})).toBe(123);
+  expect(target({center:.3,'dash-center':.3,'zone-8':.4})).toBe(195);
+  expect(target({'zone-2':.3,'dash-to-zone-2':.3,'zone-8':.4})).toBe(45);
+  expect(target({'zone-1':1})).toBe(0);expect(target({'zone-8':1})).toBe(390);
+  expect(target({'zone-2':.5,'zone-7':.5})).toBe(45);
+  expect(target({unknown:100,'zone-4':1})).toBe(165);
+  expect(target(undefined)).toBe(390);expect(target({unknown:1})).toBe(390);
+ });
+});
