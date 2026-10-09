@@ -1,5 +1,13 @@
-export const freshBreakout = () => ({width:480,height:360,ball:{x:240,y:270,vx:2.4,vy:-3,radius:6},paddle:{x:195,y:330,width:90,height:10},bricks:Array.from({length:24},(_,i)=>({x:15+(i%8)*57,y:42+Math.floor(i/8)*25,width:51,height:17})),bricksLeft:24,score:0,lives:3,frame:0});
-export const finished = s => s.lives===0 || s.bricksLeft===0;
+// Mulberry32: a fixed uint32 seed reproduces the launch sequence across modes.
+export function seededRandom(seed) {
+ let state=seed>>>0;
+ return ()=>{state=(state+0x6D2B79F5)>>>0;let t=state;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return ((t^(t>>>14))>>>0)/4294967296;};
+}
+export function freshBreakout(random=seededRandom(1),gameId=1) {
+ const angle=(30+120*random())*Math.PI/180,speed=Math.hypot(2.4,3);
+ return {gameId,width:480,height:360,ball:{x:240,y:323,vx:speed*Math.cos(angle),vy:-speed*Math.sin(angle),radius:6},paddle:{x:195,y:330,width:90,height:10},bricks:Array.from({length:24},(_,i)=>({x:15+(i%8)*57,y:42+Math.floor(i/8)*25,width:51,height:17})),bricksLeft:24,score:0,gameOver:false,frame:0};
+}
+export const finished = s => s.gameOver || s.bricksLeft===0;
 export function actionsFor(s,k){
  const n=4*k;
  return [{id:'left',description:`Move the paddle left ${n} px over the next ${k} frames (4 px/frame, clamped at the left wall).`},{id:'right',description:`Move the paddle right ${n} px over the next ${k} frames (4 px/frame, clamped at the right wall).`},{id:'stay',description:`Hold the paddle in place (0 px movement) for the next ${k} frames.`}];
@@ -20,7 +28,7 @@ export function advanceFrame(s,action,events,tracking){
  }
  const hit=s.bricks.findIndex(t=>b.x+r>=t.x&&b.x-r<=t.x+t.width&&b.y+r>=t.y&&b.y-r<=t.y+t.height);
  if(hit>=0){const t=s.bricks[hit];if(oldY+r<=t.y||oldY-r>=t.y+t.height)b.vy=-b.vy;else b.vx=-b.vx;s.bricks.splice(hit,1);s.bricksLeft=s.bricks.length;s.score+=10;events.push('Brick hit +10.');if(!s.bricksLeft)events.push('All bricks cleared. You won!');}
- if(b.y-r>s.height){s.lives--;events.push('Missed the ball, lost a life.');if(s.lives){Object.assign(b,{x:p.x+p.width/2,y:270,vx:2.4,vy:-3});}else events.push('Game over.');}
+ if(b.y-r>s.height){s.gameOver=true;events.push('Game over: missed the ball.');}
 }
 export function inputCost(response){const n=response?.usage?.input_tokens;return Number.isFinite(n)&&n>=0?n*0.10/1e6:null;}
 
@@ -34,7 +42,7 @@ export function targetFor(s,action) {
  return Math.max(0,Math.min(s.width-s.paddle.width,(Number(action.slice(5))-.5)*s.width/8-s.paddle.width/2));
 }
 // Consume every request once, including discarded replies. Age uses monotonic real
-// time, not simulation frames (which vary with game speed). A life is a revision.
+// time, not simulation frames (which vary with game speed). A game ID is a revision.
 export function acceptDecision({request,result,now,maxAgeMs,active,game,seen}) {
  const ageMs=now-request.capturedAt;
  if(seen.has(request.id))return {status:'duplicate',ageMs};
@@ -43,7 +51,7 @@ export function acceptDecision({request,result,now,maxAgeMs,active,game,seen}) {
  if(!active)status='stopped';
  else if(result.error)status='error';
  else if(result.restap?.id!==request.id)status='wrong ID';
- else if(game.lives!==request.lives||finished(game))status='obsolete state';
+ else if(game.gameId!==request.gameId||finished(game))status='obsolete state';
  else if(ageMs>=maxAgeMs)status='stale';
  else if(result.restap?.action===null)status='refused';
  else if(!request.actions.some(a=>a.id===result.restap?.action))status='invalid action';

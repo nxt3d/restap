@@ -15,12 +15,13 @@
 <div class="card"><div class="eyebrow">HEADLINE DEMO</div><h2>Breakout · snapshot decisions</h2><p class="muted">Real-time keeps playing while decisions arrive. Paused mode freezes for each decision.</p>
 <div class="row"><label for="breakMode">Mode</label><select id="breakMode"><option value="realtime">Real-time</option><option value="paused">Paused</option></select><label for="inputMode">INPUT MODE</label><select id="inputMode"><option value="state">State only</option><option value="images">Images only</option><option value="both" selected>State + images</option></select><label for="frameCount">Images</label><select id="frameCount"><option value="2" selected>2 frames</option><option value="1">1 frame</option><option value="3">3 frames</option><option value="4">4 frames</option></select><label for="gameSpeed">Game speed</label><select id="gameSpeed"><option value="0.5">0.5x</option><option value="1" selected>1x</option></select></div>
 <div class="row"><label for="maxAge">Max age (ms)</label><input id="maxAge" type="number" min="1" max="30000" value="750"><label for="decisionInterval">Interval (ms)</label><input id="decisionInterval" type="number" min="0" max="10000" value="0"></div>
+<div class="row"><label for="seed">Seed</label><input id="seed" type="number" min="0" max="4294967295" value="1"><label><input id="sameSeeds" type="checkbox" checked> Same seeds</label><button id="newSeed">New seed</button><label><input id="autoRestart" type="checkbox"> Auto-restart</label><label for="gamesBudget">Games budget</label><input id="gamesBudget" type="number" min="1" max="1000" value="10"></div>
 <canvas id="breakout" width="480" height="360" style="max-width:480px" aria-label="Breakout game with ball, paddle and bricks"></canvas>
 <p id="gameStats" aria-live="polite"></p>
 <div class="row"><label for="frames">Frames / decision (K)</label><input id="frames" type="number" min="1" max="120" value="20"><label for="breakTurns">Max decisions</label><input id="breakTurns" type="number" min="1" max="500" value="50"></div>
 <div class="row"><button id="breakPlay" class="primary">Play Breakout</button><button id="breakPause" disabled>Stop</button><button id="breakStep">Step decision</button><button id="breakReset">Reset</button></div>
-<p><small>Real-time: eight target zones + stay; max 4 px/simulation frame. Interval is the minimum time between request starts (0 = immediately after each reply). Stop discards pending replies. Paused mode uses left/right/stay for K frames. Decision budget is total since Reset. Real-time input modes compare full state, images only, or both. Images are recent decision snapshots, oldest first; missing history is padded and labeled. Results below survive Reset for this tab session.</small></p><p id="realtimeStats" aria-live="polite"></p><div id="snapshotStrip" style="display:flex;gap:8px;overflow:auto"></div><ol id="breakLog" style="max-height:220px;overflow:auto"></ol></div>
-<div class="card"><h2>Real-time · session comparison</h2><p><small>Accumulated across runs and resets, grouped by input mode, image count and speed. Tracking = paddle contacts / approaches to paddle height; — means no approaches yet. Input cost uses the supplied $0.10/M token estimate; unknown usage is excluded and counted. Output charges excluded.</small></p><div style="overflow:auto"><table style="width:100%;text-align:left;font-size:13px"><thead><tr><th>Input / speed</th><th>Decisions</th><th>Errors</th><th>Avg latency</th><th>Input / decision</th><th>Decisions/s</th><th>Stale</th><th>Tracking</th></tr></thead><tbody id="modeResults"></tbody></table></div></div>
+<p><small>Real-time: eight target zones + stay; max 4 px/simulation frame. Interval is the minimum time between request starts (0 = immediately after each reply). Stop discards pending replies. Paused mode uses left/right/stay for K frames. Decision budget is total since Reset. A miss ends the game; no lives or respawns. Auto-restart waits for the old reply to settle and respects both budgets. Same seeds replays launches from game 1 on Reset or mode changes; unchecked selects a new seed on Reset. New seed starts a fresh sequence. Input modes compare full state, images only, or both. Images are recent decision snapshots, oldest first; missing history is padded and labeled. Results below survive Reset for this tab session.</small></p><p id="realtimeStats" aria-live="polite"></p><div id="snapshotStrip" style="display:flex;gap:8px;overflow:auto"></div><ol id="breakLog" style="max-height:220px;overflow:auto"></ol></div>
+<div class="card"><h2>Per-game · session comparison</h2><p><small>Completed games only for survival averages; interrupted games are excluded. Decisions survived = valid actions applied while still alive (paused: survived the resulting K frames). Time alive = simulation seconds, excluding inference pauses. Grouped by play mode, input, images/K, speed and seed set. Latency/cost/stale include all replies, including discarded end-of-game replies. Input cost uses the supplied $0.10/M token estimate; unknown usage is excluded and counted. Output charges excluded.</small></p><div style="overflow:auto"><table style="width:100%;text-align:left;font-size:13px"><thead><tr><th>Mode / frames / seed set</th><th>Games played</th><th>Avg decisions survived</th><th>Avg bricks</th><th>Avg time alive</th><th>Avg latency</th><th>Input / decision</th><th>Stale</th><th>Errors</th></tr></thead><tbody id="modeResults"></tbody></table></div></div>
 <div class="card"><h2>Auto-play · screenshot → decision → move</h2><p class="muted">Blue player P → green exit X. Avoid the red enemy E and dark walls. North is up; enemy stays still.</p>
 <canvas id="world" width="360" height="360" aria-label="Six by six grid world showing the player, enemy, walls and exit"></canvas>
 <div class="row"><label for="turns" style="margin:0">Max turns</label><input id="turns" type="number" min="1" max="50" value="12"><button id="auto" class="primary">Auto-play</button><button id="stop" disabled>Stop</button><button id="reset">Reset grid</button></div>
@@ -51,7 +52,7 @@
 <details class="card"><summary>What you are seeing</summary><p>This is a diagnostic playground, not the full protocol endpoint. <code>POST /decide</code> wraps the small RESTAP response with provider diagnostics. These panels show inputs and outputs, not hidden model reasoning.</p><p>Only an explicit OpenAI refusal becomes <code>action: null</code>. A chosen <code>wait</code> advances a grid turn. Null pauses turn-based play; real-time keeps its previous target. Invalid output, provider failures and timeouts are errors.</p><p><a href="https://developers.openai.com/api/docs/guides/decisions" target="_blank" rel="noreferrer">Official OpenAI Decisions documentation</a></p></details>
 </section></main>
 <script type="module">
-import {freshBreakout, finished, actionsFor, advanceFrame, inputCost, targetActions, targetFor, acceptDecision, frameClock} from "/breakout.js";
+import {freshBreakout, seededRandom, finished, actionsFor, advanceFrame, inputCost, targetActions, targetFor, acceptDecision, frameClock} from "/breakout.js";
 const $ = id => document.getElementById(id);
 const pretty = value => JSON.stringify(value, null, 2);
 const gridActions = ['north','south','east','west','wait'].map(id => ({id,description:id==='wait'?'Stay in place for one turn.':`Move one tile ${id}; blocked by walls or grid edges.`}));
@@ -82,7 +83,7 @@ function loadPreset(){
  }
  fill(req);
 }
-function setBusy(value){busy=value;$('fields').disabled=value;$('preset').disabled=value;$('auto').disabled=value;$('reset').disabled=value;$('turns').disabled=value;$('stop').disabled=!playing;for(const id of ['breakPlay','breakStep','breakReset','frames','breakTurns','breakMode','gameSpeed','maxAge','decisionInterval'])$(id).disabled=value;$('breakPause').disabled=!breakRunning;modeControls();}
+function setBusy(value){busy=value;$('fields').disabled=value;$('preset').disabled=value;$('auto').disabled=value;$('reset').disabled=value;$('turns').disabled=value;$('stop').disabled=!playing;for(const id of ['breakPlay','breakStep','breakReset','frames','breakTurns','breakMode','gameSpeed','maxAge','decisionInterval','seed','sameSeeds','newSeed','autoRestart','gamesBudget'])$(id).disabled=value;$('breakPause').disabled=!breakRunning;modeControls();}
 function showImages(req){
  $('sentImages').replaceChildren();for(const [i,src] of (req.context.images??[]).entries()){const image=document.createElement('img');image.src=src;image.alt=`Image ${i+1} sent for this decision`;image.style.cssText='width:100%;max-width:480px';const label=document.createElement('p');label.textContent=`Image ${i+1}${i===req.context.images.length-1?' (current)':''}`;$('sentImages').append(label,image);}
 }
@@ -162,20 +163,20 @@ $('stop').onclick=()=>{playing=false;runToken++;$('stop').disabled=true;$('statu
 $('reset').onclick=()=>{if(busy)return;world=freshWorld();gridEvents=[];$('steps').replaceChildren();draw();$('preset').value='grid';loadPreset();};
 $('preset').onchange=loadPreset;$('clearImage').onclick=clearImage;
 $('image').onchange=async()=>{const file=$('image').files[0];if(!file){clearImage();return;}if(file.size>5*1024*1024){clearImage();$('status').textContent='Image exceeds 5 MiB.';return;}setBusy(true);try{upload=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file);});$('imagePreview').src=upload;$('imagePreview').hidden=false;}catch{clearImage();$('status').textContent='Could not read image.';}finally{setBusy(false);}};
-let game=freshBreakout(), breakRunning=false, breakTurn=0, breakEvents=['Game started.'];
+let launchSeed=Number($('seed').value),launchRandom=seededRandom(launchSeed), gameNumber=1, gameDecisions=0, recordedGame=false;
+let game=freshBreakout(launchRandom,gameNumber), breakRunning=false, breakTurn=0, breakEvents=['Game started.'];
 let breakGeneration=0, target=game.paddle.x, targetZone='stay', animation=0, wakeDecision=null;
 let snapshotsHistory=[], lastFrameCount=null;
 const modeResults=new Map();
 let activeResult=null;
 let rtStats={completed:0,errors:0,latency:0,stale:0,discarded:0,elapsed:0}, activeSince=null;
 const consumed=new Set();
-function modeControls(){const realtime=$('breakMode').value==='realtime';$('frames').disabled=busy||realtime;$('breakStep').disabled=busy||realtime;for(const id of ['maxAge','decisionInterval','inputMode'])$(id).disabled=busy||!realtime;$('frameCount').disabled=busy||!realtime||$('inputMode').value==='state';}
+function modeControls(){const realtime=$('breakMode').value==='realtime';$('frames').disabled=busy||realtime;$('breakStep').disabled=busy||realtime;for(const id of ['maxAge','decisionInterval'])$(id).disabled=busy||!realtime;$('inputMode').disabled=busy;$('frameCount').disabled=busy||$('inputMode').value==='state';}
 function drawModeResults(){
  $('modeResults').replaceChildren();
  for(const row of modeResults.values()){
-  const seconds=(row.elapsed+(row===activeResult&&activeSince!==null?performance.now()-activeSince:0))/1000;
-  const attempts=row.contacts+row.misses;
-  const values=[row.label,row.completed,row.errors,`${row.completed?Math.round(row.latency/row.completed):0} ms`,row.known?`$${(row.cost/row.known).toFixed(8)}${row.unknown?' + '+row.unknown+' unknown':''}`:`unknown (${row.unknown})`,seconds?(row.completed/seconds).toFixed(2):'0.00',`${row.completed?(100*row.stale/row.completed).toFixed(1):0}%`,attempts?`${(100*row.contacts/attempts).toFixed(1)}% (${row.contacts}/${attempts})`:'—'];
+  const avg=n=>row.games?(n/row.games).toFixed(2):'—';
+  const values=[row.label,row.games,avg(row.decisions),avg(row.bricks),row.games?avg(row.alive)+' s':'—',`${row.completed?Math.round(row.latency/row.completed):0} ms`,row.known?`$${(row.cost/row.known).toFixed(8)}${row.unknown?' + '+row.unknown+' unknown':''}`:`unknown (${row.unknown})`,`${row.completed?(100*row.stale/row.completed).toFixed(1):0}%`,row.errors];
   const tr=document.createElement('tr');for(const value of values){const td=document.createElement('td');td.textContent=String(value);td.style.padding='6px';tr.append(td);}$('modeResults').append(tr);
  }
 }
@@ -189,6 +190,40 @@ function stopBreakout(){
  if(activeSince!==null){const elapsed=performance.now()-activeSince;rtStats.elapsed+=elapsed;if(activeResult)activeResult.elapsed+=elapsed;activeSince=null;}
  $('breakPause').disabled=true;drawRealtimeStats();
 }
+function selectResult(){
+ const input=$('inputMode').value,images=input==='state'?0:Number($('frameCount').value),mode=$('breakMode').value;
+ const label=`${mode} · ${{state:'State only',images:'Images only',both:'State + images'}[input]} · ${images} images${mode==='paused'?' · K='+$('frames').value:''} · ${$('gameSpeed').value}x · seed ${$('seed').value}`;
+ if(!modeResults.has(label))modeResults.set(label,{label,completed:0,errors:0,latency:0,cost:0,known:0,unknown:0,stale:0,elapsed:0,contacts:0,misses:0,games:0,decisions:0,bricks:0,alive:0});
+ activeResult=modeResults.get(label);
+}
+function recordGame(){
+ if(!finished(game)||recordedGame)return;
+ recordedGame=true;
+ activeResult.games++;activeResult.decisions+=gameDecisions;activeResult.bricks+=24-game.bricksLeft;activeResult.alive+=game.frame/60;
+ breakNote(`GAME ${gameNumber} ENDED · seed ${$('seed').value} · ${game.gameOver?'Game over: missed the ball':'All bricks cleared'} · decisions survived ${gameDecisions} · bricks ${24-game.bricksLeft} · time alive ${(game.frame/60).toFixed(2)} s`);
+ $('status').textContent=game.gameOver?'Game over: missed the ball':'All bricks cleared';drawRealtimeStats();
+}
+function nextGame(){
+ gameNumber++;game=freshBreakout(launchRandom,gameNumber);gameDecisions=0;recordedGame=false;snapshotsHistory=[];target=game.paddle.x;targetZone='stay';breakEvents=['Game started.'];
+ breakNote(`GAME ${gameNumber} STARTED · seed ${$('seed').value}`);drawBreakout();
+}
+async function runSeries(single=false){
+ if(busy)return;
+ const budget=Number($('gamesBudget').value),seed=Number($('seed').value);
+ if(!Number.isInteger(seed)||seed<0||seed>4294967295)return void($('status').textContent='Seed must be an integer from 0 to 4294967295.');
+ if(!Number.isInteger(budget)||budget<1||budget>1000)return void($('status').textContent='Choose 1–1000 games.');
+ if(seed!==launchSeed)resetGames();
+ do{
+  if(gameNumber>budget)break;
+  if(finished(game)){
+   if(single||!$('autoRestart').checked||gameNumber>=budget||breakTurn>=Number($('breakTurns').value))break;
+   nextGame();
+  }
+  selectResult();
+  if($('breakMode').value==='realtime')await runRealtime();else await runBreakout(single);
+ }while(!single&&finished(game)&&$('autoRestart').checked&&gameNumber<budget&&breakTurn<Number($('breakTurns').value)&&!seriesStopped);
+}
+let seriesStopped=false;
 async function runRealtime(){
  if(busy)return;
  const limit=Number($('breakTurns').value),maxAgeMs=Number($('maxAge').value),interval=Number($('decisionInterval').value),speed=Number($('gameSpeed').value);
@@ -198,32 +233,29 @@ async function runRealtime(){
  snapshotsHistory=[];
  let consecutiveErrors=0;
  const inputMode=$('inputMode').value, requestedFrames=Number($('frameCount').value), imageCount=inputMode==='state'?0:requestedFrames;
- const key=`${inputMode}-${imageCount}-${speed}`;
- if(!modeResults.has(key))modeResults.set(key,{label:`${{state:'State only',images:'Images only',both:'State + images'}[inputMode]}${imageCount?' · '+imageCount+' frames':''} · ${speed}x`,completed:0,errors:0,latency:0,cost:0,known:0,unknown:0,stale:0,elapsed:0,contacts:0,misses:0});
- activeResult=modeResults.get(key);
  const tick=frameClock();
  const animate=now=>{
   if(!breakRunning||generation!==breakGeneration)return;
   tick(now,speed,()=>{advanceFrame(game,target,breakEvents,activeResult);if(breakEvents.length>30)breakEvents.splice(0,breakEvents.length-30);});
   drawBreakout();drawRealtimeStats();
-  if(finished(game)){stopBreakout();return;}
+  if(finished(game)){recordGame();stopBreakout();return;}
   animation=requestAnimationFrame(animate);
  };
  animation=requestAnimationFrame(animate);
  try{while(breakRunning&&breakTurn<limit){
   drawBreakout();const capturedAt=performance.now();
   const frameCount=imageCount;
-  const current={frame:game.frame,lives:game.lives,image:imageCount?$('breakout').toDataURL('image/png'):null};
-  snapshotsHistory=snapshotsHistory.filter(s=>s.lives===game.lives);
+  const current={frame:game.frame,gameId:game.gameId,image:imageCount?$('breakout').toDataURL('image/png'):null};
+  snapshotsHistory=snapshotsHistory.filter(s=>s.gameId===game.gameId);
   snapshotsHistory.push(current);snapshotsHistory=snapshotsHistory.slice(-4);
   const snapshots=imageCount?snapshotsHistory.slice(-imageCount):[];
   while(snapshots.length<imageCount)snapshots.unshift(snapshots[0]);
-  const labels=snapshots.map((s,i)=>`Image ${i+1}: frame ${s.frame}${i===snapshots.length-1?' (current)':` (${current.frame-s.frame} frames before Image ${snapshots.length})`}`).join('; ')+(new Set(snapshots).size<snapshots.length?'. Missing history in this run/life; repeated frame labels are duplicate snapshots.':'');
-  const context={text:'Play continuously running Breakout. Clear the bricks and preserve lives by keeping the paddle under the predicted ball intercept at paddle height, accounting for wall bounces and observation delay. Choose a target zone and hold until replaced.'};
+  const labels=snapshots.map((s,i)=>`Image ${i+1}: frame ${s.frame}${i===snapshots.length-1?' (current)':` (${current.frame-s.frame} frames before Image ${snapshots.length})`}`).join('; ')+(new Set(snapshots).size<snapshots.length?'. Missing history in this game; repeated frame labels are duplicate snapshots.':'');
+  const context={text:'Play continuously running Breakout. Clear the bricks and avoid missing the ball by keeping the paddle under the predicted ball intercept at paddle height, accounting for wall bounces and observation delay. Choose a target zone and hold until replaced.'};
   if(inputMode!=='images')context.state={...structuredClone(game),gameSpeed:speed,currentTarget:targetZone,targetX:target};
   if(imageCount){context.images=snapshots.map(s=>s.image);context.text+=' '+labels;}
   const req={id:crypto.randomUUID(),context,actions:targetActions(game)};
-  const request={id:req.id,capturedAt,lives:game.lives,actions:req.actions};breakEvents=[];breakTurn++;
+  const request={id:req.id,capturedAt,gameId:game.gameId,actions:req.actions};breakEvents=[];breakTurn++;
   const card=document.createElement('figure');card.style.cssText='margin:0;flex:0 0 140px;font-size:11px';
   const img=document.createElement(imageCount?'img':'span');if(imageCount){img.src=req.context.images.at(-1);img.alt=`Sent snapshot frame ${game.frame}`;img.style.width='140px';}else img.textContent='State only';
   const caption=document.createElement('figcaption');caption.textContent=`Frame ${game.frame} · pending`;card.append(img,caption);$('snapshotStrip').prepend(card);while($('snapshotStrip').children.length>6)$('snapshotStrip').lastChild.remove();
@@ -238,9 +270,9 @@ async function runRealtime(){
    const cost=inputCost(result.openai_response);if(cost===null)activeResult.unknown++;else{activeResult.known++;activeResult.cost+=cost;}
   }
   if(verdict.status==='stale')activeResult.stale++;
-  if(verdict.status==='applied'){target=targetFor(game,result.restap.action);targetZone=result.restap.action;}
+  if(verdict.status==='applied'){gameDecisions++;target=targetFor(game,result.restap.action);targetZone=result.restap.action;}
   else if(!failed){rtStats.discarded++;if(verdict.status==='stale')rtStats.stale++;}
-  const note=`${frameCount} frame(s) · Frame ${current.frame} → ${game.frame}: ${result.restap?.action??result.error??'null'} · ${verdict.status} · latency ${Math.round(receivedAt-capturedAt)} ms · age at ${verdict.status==='applied'?'apply':'discard'} ${Math.round(verdict.ageMs)} ms`;
+  const note=`Game ${gameNumber} · ${frameCount} frame(s) · Frame ${current.frame} → ${game.frame}: ${result.restap?.action??result.error??'null'} · ${verdict.status} · latency ${Math.round(receivedAt-capturedAt)} ms · age at ${verdict.status==='applied'?'apply':'discard'} ${Math.round(verdict.ageMs)} ms`;
   caption.textContent=note;card.append(scoreView(result.restap));breakNote(note);drawRealtimeStats();
   // Failed attempts never count as decisions. Pause repeated failures and let Stop cancel backoff.
   if(!breakRunning)break;
@@ -261,34 +293,61 @@ function drawBreakout(){
  const c=$('breakout').getContext('2d');c.fillStyle='#142738';c.fillRect(0,0,480,360);
  game.bricks.forEach((b,i)=>{c.fillStyle=['#57dac3','#ffcc73','#ef859d'][Math.floor(b.y/25)-1]??'#57dac3';c.fillRect(b.x,b.y,b.width,b.height);});
  c.fillStyle='#f3f7fb';c.fillRect(game.paddle.x,game.paddle.y,game.paddle.width,game.paddle.height);c.beginPath();c.arc(game.ball.x,game.ball.y,game.ball.radius,0,Math.PI*2);c.fill();
- c.font='14px monospace';c.fillText(`SCORE ${game.score}    LIVES ${game.lives}    FRAME ${game.frame}`,15,22);
- $('gameStats').textContent=`Score ${game.score} · Lives ${game.lives} · Bricks ${game.bricksLeft} · Frame ${game.frame} · Turn ${breakTurn}${finished(game)?(game.lives?' · You won!':' · Game over'):''}`;
+ c.font='14px monospace';c.fillText(`SCORE ${game.score}    GAME ${gameNumber}    FRAME ${game.frame}`,15,22);
+ $('gameStats').textContent=`Game ${gameNumber} · Seed ${$('seed').value} · Score ${game.score} · Bricks ${game.bricksLeft} · Frame ${game.frame} · Turn ${breakTurn}${finished(game)?(game.gameOver?' · Game over: missed the ball':' · You won!'):''}`;
+ if(finished(game)){c.fillStyle='#142738';c.fillRect(20,150,440,50);c.fillStyle='#fff';c.font='20px sans-serif';c.fillText(game.gameOver?'Game over: missed the ball':'All bricks cleared!',35,182);}
+
 }
 function breakNote(text){const li=document.createElement('li');li.textContent=text;$('breakLog').append(li);$('breakLog').scrollTop=$('breakLog').scrollHeight;}
 async function runBreakout(single=false){
  if(busy)return;const k=Number($('frames').value),limit=Number($('breakTurns').value);
  if(!Number.isInteger(k)||k<1||k>120||!Number.isInteger(limit)||limit<1||limit>500){$('status').textContent='Use 1–120 frames and 1–500 turns.';return;}
  if(finished(game)||breakTurn>=limit){$('status').textContent='Reset the game or increase the turn budget to continue.';return;}
- breakRunning=true;const generation=++breakGeneration;setBusy(true);
+ breakRunning=true;const generation=++breakGeneration;setBusy(true);activeSince=performance.now();
  try{do{
-  drawBreakout();const req={id:crypto.randomUUID(),context:{text:'Play Breakout: clear all bricks, maximize score and preserve lives by keeping the paddle under the ball. Coordinates start at top left; positive vy moves down. Simulation is paused during inference. Each action advances exactly '+k+' frames unless the game ends.',state:structuredClone(game),events:[...breakEvents],images:[$('breakout').toDataURL('image/png')]},actions:actionsFor(game,k)};
+  drawBreakout();const capturedAt=performance.now(),inputMode=$('inputMode').value,imageCount=inputMode==='state'?0:Number($('frameCount').value);
+  const context={text:'Play Breakout: clear all bricks and avoid missing the ball. Simulation is paused during inference. Each action advances exactly '+k+' frames unless the game ends.'};
+  if(inputMode!=='images')context.state=structuredClone(game);
+  if(imageCount){
+   snapshotsHistory.push({frame:game.frame,image:$('breakout').toDataURL('image/png')});snapshotsHistory=snapshotsHistory.slice(-4);
+   const shots=snapshotsHistory.slice(-imageCount);while(shots.length<imageCount)shots.unshift(shots[0]);
+   context.images=shots.map(s=>s.image);context.text+=' '+shots.map((s,i)=>`Image ${i+1}: frame ${s.frame}`).join('; ')+'. Repeated frame labels are duplicate snapshots.';
+  }
+  const req={id:crypto.randomUUID(),context,actions:actionsFor(game,k)};
   fill(req);breakTurn++;const result=await decide(req);
-  if(!breakRunning||generation!==breakGeneration){breakNote('Stopped; pending action discarded.');break;}
+  lastFrameCount=imageCount;
+  const failed=!!result.error||result.restap?.id!==req.id||(result.restap?.action!==null&&!req.actions.some(a=>a.id===result.restap?.action));
+  if(failed){activeResult.errors++;rtStats.errors++;}
+  else{rtStats.completed++;rtStats.latency+=performance.now()-capturedAt;activeResult.completed++;activeResult.latency+=performance.now()-capturedAt;const cost=inputCost(result.openai_response);if(cost===null)activeResult.unknown++;else{activeResult.known++;activeResult.cost+=cost;}}
+  if(!breakRunning||generation!==breakGeneration){rtStats.discarded++;breakNote('Stopped; pending action discarded.');break;}
   const action=result.restap?.action,cost=inputCost(result.openai_response);
-  breakNote(`Turn ${breakTurn}: ${result.error??String(action)} · ${result.latency_ms} ms · input ${cost===null?'unknown':'$'+cost.toFixed(8)}`);
+  breakNote(`Game ${gameNumber} · Turn ${breakTurn}: ${result.error??String(action)} · ${result.latency_ms} ms · input ${cost===null?'unknown':'$'+cost.toFixed(8)}`);
   if(result.error||action===null){breakNote('Paused; no frames advanced.');break;}
   if(result.restap?.id!==req.id||!req.actions.some(a=>a.id===action)){breakNote('Invalid response; no frames advanced.');break;}
   breakEvents=[];
   const tick=frameClock();let frames=0;
   while(frames<k&&breakRunning&&!finished(game)){const now=await new Promise(requestAnimationFrame);if(!breakRunning)break;tick(now,Number($('gameSpeed').value),()=>{if(frames<k&&!finished(game)){advanceFrame(game,action,breakEvents);frames++;}});drawBreakout();}
+  if(!finished(game)&&breakRunning&&frames===k)gameDecisions++;else if(finished(game))recordGame();
   if(!breakEvents.length)breakEvents.push(`Advanced ${frames} frames; no collisions.`);
   breakNote(breakEvents.join(' '));
  }while(!single&&breakRunning&&!finished(game)&&breakTurn<limit);
- }catch{breakNote('Paused after an unexpected error.');}finally{breakRunning=false;setBusy(false);drawBreakout();}
+ }catch{breakNote('Paused after an unexpected error.');}finally{stopBreakout();setBusy(false);drawBreakout();}
 }
-$('breakPlay').onclick=()=> $('breakMode').value==='realtime'?runRealtime():runBreakout();$('breakMode').onchange=()=>{target=game.paddle.x;targetZone='stay';modeControls();drawRealtimeStats();};$('breakStep').onclick=()=>runBreakout(true);
-$('breakPause').onclick=()=>{stopBreakout();$('status').textContent='Stopped; pending replies will be discarded.';};
-$('breakReset').onclick=()=>{if(busy)return;game=freshBreakout();snapshotsHistory=[];lastFrameCount=null;target=game.paddle.x;targetZone='stay';consumed.clear();rtStats={completed:0,errors:0,latency:0,stale:0,discarded:0,elapsed:0};$('snapshotStrip').replaceChildren();drawRealtimeStats();breakTurn=0;breakEvents=['Game started.'];$('breakLog').replaceChildren();drawBreakout();};
-$('inputMode').onchange=modeControls;
+function randomSeed(){return crypto.getRandomValues(new Uint32Array(1))[0];}
+function resetGames(newSeed=false){
+ if(busy)return;
+ if(newSeed)$('seed').value=String(randomSeed());
+ const seed=Number($('seed').value);
+ if(!Number.isInteger(seed)||seed<0||seed>4294967295){$('status').textContent='Seed must be an integer from 0 to 4294967295.';return;}
+ launchSeed=seed;launchRandom=seededRandom(seed);gameNumber=0;nextGame();lastFrameCount=null;consumed.clear();activeResult=null;
+ rtStats={completed:0,errors:0,latency:0,stale:0,discarded:0,elapsed:0};$('snapshotStrip').replaceChildren();breakTurn=0;drawRealtimeStats();drawBreakout();modeControls();
+}
+$('breakPlay').onclick=()=>{seriesStopped=false;return runSeries();};
+$('breakStep').onclick=()=>{seriesStopped=false;return runSeries(true);};
+$('breakPause').onclick=()=>{seriesStopped=true;stopBreakout();$('status').textContent='Stopped; pending replies will be discarded.';};
+$('breakReset').onclick=()=>resetGames(!$('sameSeeds').checked);
+$('newSeed').onclick=()=>resetGames(true);
+$('seed').onchange=()=>resetGames();
+for(const id of ['breakMode','inputMode','frameCount','frames','gameSpeed'])$(id).onchange=()=>resetGames(!$('sameSeeds').checked);
 modeControls();drawRealtimeStats();drawBreakout();draw();loadPreset();
 </script></body></html>
