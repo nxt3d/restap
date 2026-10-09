@@ -55,3 +55,5 @@ npm run test:run
 ```
 
 All ordinary tests inject a mocked transport and never read the key file or call OpenAI. To opt into a live test, start the server with a key and use Decide or Auto-play.
+
+Optional backend `confidence` and complete `probabilities` are preserved in the RESTAP response and displayed as confidence plus probability bars in the result, run history, and real-time snapshot strip. Missing or invalid scores and partial distributions are omitted; refusal has neither field. Scores never select or replace an action. Mapping follows the [official Decisions API reference](https://developers.openai.com/api/reference/resources/decisions/methods/create): `confidence` and `probabilities: [{value, probability}]`.

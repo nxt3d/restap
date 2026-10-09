@@ -1,10 +1,10 @@
 # Proposal 0001: optional decision endpoint — review plan
 
-Status: review decisions final; plan revised only. Implementation and release are not part of this task.
+Status: decisions 1–8 final. Stage 1 and the playground are implemented; decision 8 authorizes score specification, playground mapping/display, and tests. Remaining reference-server stages are planned. Commit authorized; no push.
 Date: 2026-10-09. Owner: restap. Original task: `plan-decision-extension`. Revision task: `revise-decision-plan-review`.
 Baseline: local `main` at `5d7222692a0d1c53fbb03091b94de6c732cac2bc`.
 
-The companion [memo](0001-decision-endpoint.md) is Prem's original text, copied byte-for-byte. This revision changes only this plan; the memo remains byte-for-byte unchanged. Decisions 1, 3, and 5 below amend the memo and take precedence for implementation. It does not amend the specification, implement the endpoint, bump a version, or add tests. The explicit proposals destination takes precedence over the general `output/` artifact convention for the requested plan revision.
+The companion [memo](0001-decision-endpoint.md) is Prem's original text, copied byte-for-byte. The memo remains byte-for-byte unchanged. Decisions 1, 3, 5, and 8 below amend the memo and take precedence for implementation. Decision 8 authorizes the README response schema/contract, this plan, playground scores, and tests without a version bump. The explicit proposals destination takes precedence over the general `output/` artifact convention for the requested plan revision.
 
 ## Review decisions (Prem, 2026-10-09)
 
@@ -14,7 +14,8 @@ The companion [memo](0001-decision-endpoint.md) is Prem's original text, copied 
 4. **Context support:** every `/decision` agent MUST accept text, state, and events. Only images are optional; image support is advertised in discovery.
 5. **Discovery Option D:** all five `decision` metadata fields are OPTIONAL; absence means not stated, with no fallback default or promise. Published fields must be accurate and enforced; agents SHOULD publish image support and still reject over-limit requests with 413/422. The reference server publishes PNG, 1 image, 5242880 decoded bytes/image, 8388608 encoded body bytes, and 32 actions. The two-action minimum is a protocol rule, not a setting. This amends the memo's discovery requirements.
 6. **HTTP:** accept snake_case error codes, disabled endpoint 404, SSE-only Accept 406, malformed images 400, uncompressed bodies only (Content-Encoding rejected with 415), and provider rate/quota exhaustion 503; reserve 429 for the agent's own limit.
-7. **Delivery:** use Ajv with shared schemas, native fetch for the OpenAI adapter (no SDK), off-by-default `RESTAP_DECISION=on` plus configured backend/model/key, and the small browser grid demo. No implementation or push in this revision.
+7. **Delivery (original planning approval):** use Ajv with shared schemas, native fetch for the OpenAI adapter (no SDK), off-by-default `RESTAP_DECISION=on` plus configured backend/model/key, and the small browser grid demo. No implementation or push in this revision.
+8. **Optional backend scores:** add optional `confidence` (number in [0,1] for the selected action) and `probabilities` (object keyed by exactly all offered action IDs, each a number in [0,1]). Advertise each provided field independently as `true` in `decision` metadata; absence means not provided, consistent with Option D. Both fields MUST be absent for null actions. Values MUST come from the backend and MUST NOT be fabricated or estimated; omit incomplete distributions. A full distribution SHOULD approximately sum to 1; exact normalization is not required. `action` remains THE decision; scores are informational, agent- and backend-specific, and not comparable across agents. Executing a different action is caller policy; requesting a fresh decision remains recommended. This amends the memo's no-confidence-score exclusion. Scope now: README response table/example/schema/discovery/caller rules, this plan, OpenAI playground mapping, confidence and probability bars in history and real-time snapshots, tests, commit without push, and an opt-in live score sample.
 
 ## 1. Repository findings
 
@@ -38,7 +39,7 @@ Apply the following during the separately authorized implementation, using the m
 | Advertising a RESTAP Agent | Add `{base}/decision` for agents advertising `decision`, including a nested-base example. Preserve the base URL itself as the advertised service endpoint. |
 | Before Streaming /talk responses | Add **Decision selection (optional)**, with request/response tables, complete exchanges, context/image handling, action semantics, discovery, errors, and caller reliability rules below. Clarify that decision responses are complete JSON and only talk supports SSE. |
 | The Catalog Document | Show a decision-enabled example entry containing the actual request/response JSON Schema objects and deployment metadata; label the entry optional. Include an example without this entry. |
-| Capability Fields | Add capability-local `decision?: DecisionAdvert`; explain all five metadata fields and their units. Do not put decision metadata in top-level `protocols`, and do not add a discovery endpoint. |
+| Capability Fields | Add capability-local `decision?: DecisionAdvert`; explain all seven metadata fields and their units. Do not put decision metadata in top-level `protocols`, and do not add a discovery endpoint. |
 | End to End Example Flow | Link the runnable harness and show observation → selection → caller validation/execution → next observation. |
 | Security, Why RESTAP?, For AI Agents | Add caller-held execution permissions, bounded untrusted observations, and optional selection; preserve talk/news/session rules and avoid implying automatic execution. |
 
@@ -58,7 +59,7 @@ Apply the following during the separately authorized implementation, using the m
 
 Empty optional fields can coexist with another meaningful context field; malformed defined fields must still be rejected. Ignore unknown optional properties without dropping any defined supplied context. Application-specific observations belong in `context.state`. Do not trim or normalize IDs. Reject whitespace-only action IDs/descriptions and the literal action ID `"null"` with 400 `invalid_request`. Every decision agent MUST support text, state, and events individually and together; these fields are optional per request, not optional agent capabilities. Only image support is optional.
 
-The only standard success fields are `id` and `action`: HTTP 200 `{"id":"decision42","action":"north"}` or `{"id":"decision42","action":null}`. `action` must equal an offered ID or JSON null. Empty string and string `"null"` are forbidden action values, including as offered action IDs. Responses set `Cache-Control: no-store`; set that header on decision errors too. No explanations, provider metadata, scores, streaming, callbacks, batches, tool calls, or new session fields. Explicit `wait` is a real action; null comes only from an explicit provider refusal, never a hidden abstention option, confidence threshold, timeout, or failure.
+The required success fields are `id` and `action`; optional backend `confidence` and `probabilities` follow decision 8: HTTP 200 `{"id":"decision42","action":"north"}` or `{"id":"decision42","action":null}`. `action` must equal an offered ID or JSON null. Empty string and string `"null"` are forbidden action values, including as offered action IDs. Responses set `Cache-Control: no-store`; set that header on decision errors too. No explanations, provider metadata, streaming, callbacks, batches, tool calls, or new session fields. Explicit `wait` is a real action; null comes only from an explicit provider refusal, never a hidden abstention option, confidence threshold, timeout, or failure.
 
 The spec must require harness correlation with outstanding, unconsumed request IDs, current-state/legal-action revalidation before execution, a new ID on changed context/actions, and at-most-one accepted execution per ID. Same-request retries may repeat inference and return different choices. Late, stale, unknown-ID, and consumed-ID responses cannot execute. On an execution timeout with unknown outcome, reconcile with the environment or its idempotency facility before retrying. Decision IDs alone do not provide exactly-once execution.
 
@@ -73,16 +74,18 @@ Use `id: "decision"`, `title: "Choose an action"`, `method: "POST"`, `endpoint: 
     "max_images": 1,
     "max_image_bytes": 5242880,
     "max_request_bytes": 8388608,
-    "max_actions": 32
+    "max_actions": 32,
+    "confidence": true,
+    "probabilities": true
   }
 }
 ```
 
-These are reference deployment defaults, not protocol constants or claims about provider limits. All five `decision` metadata fields are OPTIONAL, including independently of one another; `DecisionAdvert` has no required fields. An omitted field means **not stated**, never a fallback default, unlimited capacity, or a support promise. The entire optional metadata object may be omitted. Agents SHOULD publish image support through `image_mime_types`; omission does not promise or deny support.
+These are reference deployment defaults, not protocol constants or claims about provider limits. All seven `decision` metadata fields are OPTIONAL, including independently of one another; `DecisionAdvert` has no required fields. An omitted field means **not stated**, never a fallback default, unlimited capacity, or a support promise. The entire optional metadata object may be omitted. Agents SHOULD publish image support through `image_mime_types`; omission does not promise or deny support.
 
 When published, define `max_images` as a nonnegative integer, `max_actions` as an integer at least 2, `max_request_bytes` as a positive integer, and `max_image_bytes` as a nonnegative integer, positive when images are supported. `max_image_bytes` counts each decoded image; `max_request_bytes` counts the encoded JSON HTTP body, including base64 overhead, not HTTP headers. Every published value must be accurate and enforced consistently with backend support. Unpublished limits may still be enforced: over-limit requests return 413/422. Do not infer missing metadata from another field.
 
-The reference server publishes all five fields from validated configuration, with the values above. A no-image agent can explicitly publish `image_mime_types: []`, `max_images: 0`, and `max_image_bytes: 0`; these publications must be truthful but are not mandatory fields. Text/state/events support is mandatory without additional support metadata. The two-action minimum is a fixed protocol invariant, never configurable or inferred from `max_actions`.
+The reference server publishes the five limit/image fields from validated configuration and score flags only when the backend provides them. Score flags are optional booleans; absent or false means not provided. A no-image agent can explicitly publish `image_mime_types: []`, `max_images: 0`, and `max_image_bytes: 0`; these publications must be truthful but are not mandatory fields. Text/state/events support is mandatory without additional support metadata. The two-action minimum is a fixed protocol invariant, never configurable or inferred from `max_actions`.
 
 ### Error table
 
@@ -124,7 +127,7 @@ Proposed implementation locations (none created by this planning change):
 | `src/decision/router.ts` | Decision-only negotiation, bounded parsing, validation, timeout, response/error handling. |
 | `src/server.ts` | Wire optional backend/router and catalog entry from one configuration object; retain existing default app export and direct-run behavior. |
 
-Schema specifics: required keys, correlation ID `minLength: 1`, action IDs/descriptions `minLength: 1` plus a non-whitespace pattern, action ID `not: { const: "null" }`, actions `minItems: 2`, typed optional arrays/objects, context `anyOf` for text matching non-whitespace, images `minItems: 1`, state `minProperties: 1`, or events `contains` a nonblank string. Allow additional properties for forward compatibility at standard object boundaries. Metadata schema makes all five fields optional without schema defaults; validate every supplied value and consistency with configuration. Response schema requires a nonempty `id` and `action` of nonblank string excluding `"null"`, or JSON null; runtime checks constrain the string to offered IDs and compare the exact correlation ID. `uniqueItems` cannot enforce uniqueness by action ID, decoded bytes cannot be counted from a JSON string schema, and a static response schema cannot enumerate each request's choices: implement these explicitly and test schema/runtime agreement.
+Schema specifics: required keys, correlation ID `minLength: 1`, action IDs/descriptions `minLength: 1` plus a non-whitespace pattern, action ID `not: { const: "null" }`, actions `minItems: 2`, typed optional arrays/objects, context `anyOf` for text matching non-whitespace, images `minItems: 1`, state `minProperties: 1`, or events `contains` a nonblank string. Allow additional properties for forward compatibility at standard object boundaries. Metadata schema makes all seven fields optional without schema defaults; validate every supplied value and consistency with configuration. Response schema requires a nonempty `id` and `action` of nonblank string excluding `"null"`, or JSON null; runtime checks constrain the string to offered IDs and compare the exact correlation ID. `uniqueItems` cannot enforce uniqueness by action ID, decoded bytes cannot be counted from a JSON string schema, and a static response schema cannot enumerate each request's choices: implement these explicitly and test schema/runtime agreement.
 
 Validate data URL syntax and strict base64 before decoding; enforce byte ceilings before large allocation where possible, check the claimed MIME against content, and reject malformed images. No URL fetch, truncation, image dropping, or automatic conversion to text. Account for valid base64 padding and UTF-8 JSON byte length. Accept only uncompressed request bodies initially (`inflate: false`); reject a supplied Content-Encoding with 415 `unsupported_content_encoding`, so the full-body limit has one meaning. Bound incoming chunked bodies, not only Content-Length.
 
@@ -141,7 +144,7 @@ interface DecisionBackend {
   decide(
     input: { context: DecisionContext; actions: readonly DecisionAction[] },
     options: { signal: AbortSignal }
-  ): Promise<{ action: string | null }>;
+  ): Promise<{ action: string | null; confidence?: number; probabilities?: Record<string, number> }>;
 }
 ```
 
@@ -156,11 +159,13 @@ The fetched [TypeScript create reference, Markdown version](https://developers.o
 ### Adapter design after review
 
 - Serialize text, state JSON, and events into separately labeled text context; preserve all supplied values. Put each screenshot in an actual image part, not base64 prompt text. Put selection instructions in one named choice question. Treat observations as evidence, never execution authority.
-- Map each RESTAP action ID to a provider choice value with its description. Extract the single expected answer by validated name/type; reject missing, multiple, mismatched, or malformed answers. Drop provider confidence/usage from the public response.
+- Map each RESTAP action ID to a provider choice value with its description. Extract the single expected answer by validated name/type; reject missing, multiple, mismatched, or malformed answers. Preserve valid backend confidence and map a complete probability distribution; omit invalid or partial optional scores, never normalize or estimate. Drop usage from the public response.
 - Require at least two actions at the RESTAP boundary, returning 400 `too_few_actions` before calling the provider. Map exactly the caller's choices: no hidden abstention choice, boolean sentinel, singleton shortcut, or reserved provider slot. The adapter can use the provider's full 255-choice limit; the reference deployment still enforces its advertised 32-action ceiling. Validate configuration against backend capacity.
 - Map only an explicit provider refusal to null. No confidence-threshold abstention policy. A boolean answer (including `false`) is invalid; the offered string `"false"` remains a valid opaque ID. Timeouts, malformed answers, and transport errors are never null.
 - Use Node's existing native `fetch`, injected for mocks, with the verified HTTP payload and no OpenAI SDK dependency. Preserve the repo's Node >=18 baseline. Add Ajv for shared schema validation.
 - Keep provider errors sanitized, bound response reading, and disable hidden automatic retries initially. Apply a configurable deadline (propose 30 seconds), abort fetch on cancellation, and test deadline precedence. Log only operational metadata; no API keys, image bodies, private context, or reasoning traces. Provider request identifiers may remain internal.
+
+Score mapping verified against the [official Decisions API reference](https://developers.openai.com/api/reference/resources/decisions/methods/create) on 2026-10-09: a choice answer has `confidence` and `probabilities: [{ value, probability }]`. Map entries to opaque action IDs, checking full membership, unique keys, finite numeric bounds, and refusal omission. Response JSON Schema constrains both scores and forbids their presence with null; exact probability-key membership requires request-dependent validation. Test missing/independent fields, 0/1 boundaries, non-normalized distributions, partial/duplicate/extra keys, malformed values, special IDs, and refusal. UI tests must verify score rendering in history and snapshot strips without changing execution policy.
 
 ## 6. Example harness
 
@@ -199,9 +204,9 @@ Optional live smoke: an explicit opt-in command outside the default suite, with 
 
 ## 8. Review questions — resolved
 
-All seven questions are resolved by Prem's final decisions in the review section above: (1) `0.2.0-beta` and complete version alignment; (2) two-action minimum, full 255-choice adapter capacity, refusal-only null and no sentinel; (3) forbidden `"null"` action ID and nonblank action strings; (4) mandatory text/state/events support; (5) Option D optional metadata with no implicit defaults, accurate published limits, and all five reference values; (6) accepted HTTP/error rules; (7) Ajv, native fetch, explicit opt-in, and browser grid demo.
+The original seven questions are resolved by Prem's final decisions in the review section above: (1) `0.2.0-beta` and complete version alignment; (2) two-action minimum, full 255-choice adapter capacity, refusal-only null and no sentinel; (3) forbidden `"null"` action ID and nonblank action strings; (4) mandatory text/state/events support; (5) Option D optional metadata with no implicit defaults, accurate published limits, and all five reference values; (6) accepted HTTP/error rules; (7) Ajv, native fetch, explicit opt-in, and browser grid demo.
 
-Decisions **1, 3, and 5** amend Prem's original memo; this plan records those amendments while leaving `0001-decision-endpoint.md` unchanged. There are no remaining approval questions for this plan. Provider documentation details must still be rechecked when implementation is authorized. The agent selects and the caller executes; no implementation, release, or push is authorized by this plan-revision task.
+Decisions **1, 3, 5, and 8** amend Prem's original memo; this plan records those amendments while leaving `0001-decision-endpoint.md` unchanged. There are no remaining approval questions for this plan. Provider documentation details must still be rechecked when implementation is authorized. The agent selects and the caller executes; decision 8 authorizes the scoped implementation described above; release and push remain unauthorized.
 
 ## 9. Proposed order and size
 
@@ -214,4 +219,4 @@ Decisions **1, 3, and 5** amend Prem's original memo; this plan records those am
 | 5 | Grid harness, capture/state loop, stale/retry/execution tests | 1–1.5 days |
 | 6 | Compatibility matrix, build, documentation/demo review, optional live smoke | 0.5–1 day |
 
-Total: roughly **4.5–7 engineering days** for a separately authorized implementation, excluding provider-access delays; medium-sized extension, approximately 12–18 implementation/test/example files plus README/package/version edits, around 1,000–1,600 lines including tests and harness. A larger game integration or new deployment auth/rate limiting would be separately scoped. Keep implementation commits reviewable by stage, with tests accompanying each stage. Do not push, merge, release, or implement as part of this planning task.
+Total: roughly **4.5–7 engineering days** for a separately authorized implementation, excluding provider-access delays; medium-sized extension, approximately 12–18 implementation/test/example files plus README/package/version edits, around 1,000–1,600 lines including tests and harness. A larger game integration or new deployment auth/rate limiting would be separately scoped. Keep implementation commits reviewable by stage, with tests accompanying each stage. Do not push, merge, or release. Decision 8 authorizes the scoped implementation above; remaining reference-server stages remain planned.

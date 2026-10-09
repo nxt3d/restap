@@ -150,7 +150,8 @@ Accept: application/json
   },
   "actions": [
     {"id": "north", "description": "Move one tile north."},
-    {"id": "wait", "description": "Stay in place for one turn."}
+    {"id": "wait", "description": "Stay in place for one turn."},
+    {"id": "south", "description": "Move one tile south."}
   ]
 }
 ```
@@ -186,7 +187,7 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 Cache-Control: no-store
 
-{"id":"decision42","action":"north"}
+{"id":"decision42","action":"north","confidence":0.71,"probabilities":{"north":0.71,"wait":0.22,"south":0.07}}
 ```
 
 An explicit backend refusal instead returns:
@@ -203,8 +204,12 @@ Cache-Control: no-store
 | --- | --- |
 | `id` | MUST echo the request ID unchanged. |
 | `action` | MUST be an exact offered action ID or JSON `null`. Empty or blank strings and the string `"null"` are invalid. |
+| `confidence` | OPTIONAL backend-provided number in [0,1] for the selected action. MUST be absent when `action` is null. |
+| `probabilities` | OPTIONAL object whose keys are exactly the offered action IDs, each with a backend-provided number in [0,1]. MUST be absent when `action` is null. |
 
-These are the only standard success fields. There are no explanations, scores, provider metadata, reasoning traces, batches, callbacks, tool calls, or new session fields.
+Agents providing these fields MUST advertise `"confidence": true` and/or `"probabilities": true` in their capability's `decision` metadata. Absent score metadata means the field is not provided. Values MUST come from the backend; agents MUST NOT fabricate or estimate them. If the backend supplies probabilities for only some actions, omit `probabilities` rather than inventing missing values. Values SHOULD approximately sum to 1 when the backend provides a full distribution; an exact sum of 1 is not required. Values are agent- and backend-specific and are not comparable across agents.
+
+These are the only standard success fields. There are no explanations, provider metadata, reasoning traces, batches, callbacks, tool calls, or new session fields.
 
 Only an explicit provider refusal produces `null`. Agents MUST NOT add a hidden abstention choice or boolean sentinel, reserve a choice slot, or turn low confidence, timeouts, or failures into `null`. A selected `wait` is a real action; `null` selects nothing. The caller applies its fallback policy, such as pausing or obtaining fresh context, without treating null as a selected wait.
 
@@ -252,7 +257,8 @@ Errors MUST NOT contain a success-shaped action or expose provider bodies or cre
 3. Before execution, the caller MUST check the echoed ID, action membership, current environment state, and current action legality. Discard stale choices and request a new decision with fresh context.
 4. The caller MUST accept at most one execution per ID. Atomically consume the ID before executing a selected control. A null response consumes the decision without executing a control.
 5. Retries of the same request may repeat inference and return different choices. Decision IDs do not guarantee exactly-once execution. If execution times out with an unknown outcome, the caller MUST reconcile with the environment or its idempotency facility before retrying the control.
-6. Capture the action's outcome in the next observation, for example `events: ["Moved one tile north."]` with a new state revision and ID.
+6. `action` remains THE decision; scores are informational. Executing anything other than `action` is the caller's own policy. The RECOMMENDED path is to request a fresh decision instead of choosing an alternative from the scores.
+7. Capture the action's outcome in the next observation, for example `events: ["Moved one tile north."]` with a new state revision and ID.
 
 ## **Streaming /talk responses (optional)**
 
@@ -599,8 +605,15 @@ An agent supporting decisions adds this entry to `capabilities`. This example us
       "id": {"type": "string", "minLength": 1},
       "action": {
         "anyOf": [{"type": "string", "minLength": 1, "pattern": "\\S", "not": {"const": "null"}}, {"type": "null"}]
+      },
+      "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+      "probabilities": {
+        "type": "object",
+        "additionalProperties": {"type": "number", "minimum": 0, "maximum": 1}
       }
     },
+    "if": {"properties": {"action": {"type": "null"}}, "required": ["action"]},
+    "then": {"not": {"anyOf": [{"required": ["confidence"]}, {"required": ["probabilities"]}]}},
     "additionalProperties": true
   },
   "decision": {
@@ -608,12 +621,14 @@ An agent supporting decisions adds this entry to `capabilities`. This example us
     "max_images": 2,
     "max_image_bytes": 5242880,
     "max_request_bytes": 8388608,
-    "max_actions": 32
+    "max_actions": 32,
+    "confidence": true,
+    "probabilities": true
   }
 }
 ```
 
-These draft-07 schemas describe structural validation. Servers MUST also check unique action IDs, valid image content/MIME and decoded byte counts, full request byte size, exact response ID, and membership in the request's offered choices. Static schemas cannot express all of these checks. Adjust schema count limits to the deployment's actual limits.
+These draft-07 schemas describe structural validation. Servers MUST also check unique action IDs, valid image content/MIME and decoded byte counts, full request byte size, exact response ID, membership in the request's offered choices, and exact equality between probability keys and offered action IDs. Static schemas cannot express all of these checks. Adjust schema count limits to the deployment's actual limits.
 
 ## **Capability Fields**
 
@@ -636,7 +651,7 @@ The input/output schemas use standard JSON Schema format to provide precise API 
 
 ### **Decision metadata (optional)**
 
-The entire `decision` object and each of its five fields are OPTIONAL, independently of one another. `DecisionAdvert` has no required fields. An omitted field means **not stated**: it supplies no fallback default, unlimited capacity, or support promise. Do not infer missing metadata from another field.
+The entire `decision` object and each of its seven fields are OPTIONAL, independently of one another. `DecisionAdvert` has no required fields. An omitted field means **not stated**: it supplies no fallback default, unlimited capacity, or support promise. For `confidence` and `probabilities`, absence means the score field is not provided. Do not infer missing metadata from another field.
 
 | Field | Meaning and allowed value |
 | --- | --- |
@@ -645,6 +660,8 @@ The entire `decision` object and each of its five fields are OPTIONAL, independe
 | `max_image_bytes` | Maximum bytes per decoded image; nonnegative integer, positive when images are supported. |
 | `max_request_bytes` | Maximum encoded JSON HTTP body bytes, including base64 overhead, excluding headers; positive integer. |
 | `max_actions` | Maximum offered action count; integer at least 2. It does not change the two-action minimum. |
+| `confidence` | Optional boolean; `true` advertises backend confidence for the selected action. Absent or false means not provided. |
+| `probabilities` | Optional boolean; `true` advertises backend probabilities for all offered actions when a complete distribution is available. Absent or false means not provided. |
 
 Published values MUST be accurate and enforced consistently with backend support. Unpublished limits may still apply: agents MUST reject over-limit requests with 413 or 422. A no-image agent can explicitly publish `image_mime_types: []`, `max_images: 0`, and `max_image_bytes: 0`; none is mandatory.
 

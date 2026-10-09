@@ -5,6 +5,7 @@
 <title>RESTAP · Decision Playground</title>
 <style>
 :root{color-scheme:light;--ink:#192c3c;--muted:#536774;--line:#cdd9df;--accent:#007f73}*{box-sizing:border-box}body{margin:0;background:#f1f5f5;color:var(--ink);font:15px/1.5 system-ui,sans-serif}header,main{max-width:1440px;margin:auto;padding:24px}header{padding-bottom:8px}h1{font-size:30px;letter-spacing:-1px;margin:4px 0}h2{font-size:17px;margin:0 0 12px}p{margin:6px 0 14px}.eyebrow{font:12px monospace;letter-spacing:2px;color:var(--accent)}.muted,small{color:var(--muted)}.layout{display:grid;grid-template-columns:minmax(340px,.85fr) minmax(400px,1.5fr);gap:20px}.card{background:white;border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}label{display:block;font-weight:600;margin:12px 0 5px}textarea,input,select,button{font:inherit}textarea,input,select{border:1px solid #aebfc9;border-radius:6px;padding:8px;background:#fff;color:var(--ink)}textarea{width:100%;font:13px/1.5 ui-monospace,monospace;resize:vertical}button{border:1px solid #aebfc9;border-radius:6px;padding:9px 14px;background:#fff;color:var(--ink);cursor:pointer}button.primary{background:var(--accent);color:white;border-color:var(--accent);font-weight:650}button:disabled{opacity:.5;cursor:default}button:hover:enabled{filter:brightness(.94)}:focus-visible{outline:3px solid #4bb8ff;outline-offset:2px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.55 ui-monospace,monospace;margin:0;max-height:330px;overflow:auto}.panels{display:grid;grid-template-columns:1fr 1fr;gap:16px}.panels .card{min-width:0;margin:0}.result{border-left:5px solid var(--accent);display:flex;justify-content:space-between;align-items:center;gap:12px}.action{font-size:30px;font-weight:700;color:var(--accent);overflow-wrap:anywhere}.error{color:#a62f28}.badge{border:1px solid var(--line);padding:5px 10px;border-radius:20px}.chosen{background:#d8f2e8;border-color:var(--accent);font-weight:700}canvas{width:100%;max-width:360px;height:auto;border:1px solid var(--line);border-radius:8px;display:block;margin:12px auto}#steps{max-height:180px;overflow:auto;font-size:13px}#history{padding-left:22px;max-height:260px;overflow:auto}#history button{font:13px monospace;padding:6px 10px;text-align:left;margin-bottom:6px}#status{min-height:25px}input[type=number]{width:75px}details summary{cursor:pointer;font-weight:600}#imagePreview{max-width:160px;max-height:100px;display:block;margin:8px 0}#imagePreview[hidden]{display:none}@media(max-width:900px){.layout{grid-template-columns:1fr}.panels{grid-template-columns:1fr}header,main{padding:16px}}
+.scores{font-size:12px;margin:6px 0 12px}.probability{display:grid;grid-template-columns:minmax(0,1fr) 2fr auto;gap:5px;align-items:center}.probability span{overflow-wrap:anywhere}.probability meter{width:100%;height:12px}.selected-score{font-weight:700;color:var(--accent)}
 </style>
 </head>
 <body>
@@ -38,6 +39,7 @@
 </section>
 <section>
 <div class="card result" aria-live="polite"><div><h2>Chosen action</h2><div id="choice" class="action">Ready</div></div><div><strong id="latency">— ms</strong><div class="muted">server round trip</div></div></div>
+<div class="card"><h2>Backend scores</h2><div id="scores"></div><small>Informational; action is the decision. Scores are specific to this agent and backend.</small></div>
 <div class="card"><h2>Observation sent</h2><div id="sentImages"></div><p id="cost">Input cost: — · Running input total: $0.00000000</p><small>Estimate at $0.10 / 1M input tokens, per Prem. Output charges excluded. Missing usage is unknown, not zero.</small></div><div id="status" role="status"></div><div id="actionChips" class="row" style="margin-bottom:16px"></div>
 <div class="panels">
 <div class="card"><h2>02 · RESTAP request</h2><pre id="restapRequest">Choose a scenario, then Decide.</pre></div>
@@ -84,7 +86,23 @@ function setBusy(value){busy=value;$('fields').disabled=value;$('preset').disabl
 function showImages(req){
  $('sentImages').replaceChildren();for(const [i,src] of (req.context.images??[]).entries()){const image=document.createElement('img');image.src=src;image.alt=`Image ${i+1} sent for this decision`;image.style.cssText='width:100%;max-width:480px';const label=document.createElement('p');label.textContent=`Image ${i+1}${i===req.context.images.length-1?' (current)':''}`;$('sentImages').append(label,image);}
 }
+function scoreView(restap){
+ const box=document.createElement('div');box.className='scores';
+ if(!restap||restap.action===null||restap.action===undefined){box.textContent='Scores not provided';return box;}
+ const confidence=document.createElement('div');confidence.textContent=typeof restap.confidence==='number'?`Confidence: ${restap.confidence}`:'Confidence not provided';box.append(confidence);
+ if(restap.probabilities){
+  for(const [id,value] of Object.entries(restap.probabilities)){
+   const row=document.createElement('div');row.className='probability'+(id===restap.action?' selected-score':'');
+   const label=document.createElement('span');label.textContent=id;
+   const bar=document.createElement('meter');bar.min=0;bar.max=1;bar.value=value;bar.setAttribute('aria-label',`${id} probability`);
+   const number=document.createElement('span');number.textContent=String(value);
+   row.append(label,bar,number);box.append(row);
+  }
+ }else{const note=document.createElement('div');note.textContent='Probabilities not provided';box.append(note);}
+ return box;
+}
 function show(req,result){
+ $('scores').replaceChildren(scoreView(result.restap));
  showImages(req);
  const cost=inputCost(result.openai_response);$('cost').textContent=`Input cost: ${cost===null?'unknown':'$'+cost.toFixed(8)} · Running input total: $${totalCost.toFixed(8)}${unknownCosts?' + '+unknownCosts+' unknown':''}`;
  $('restapRequest').textContent=pretty(JSON.parse(JSON.stringify(req,(_k,v)=>typeof v==='string'&&v.startsWith('data:image/')?`${v.slice(0,65)}… [image shortened for display]`:v)));$('openaiRequest').textContent=pretty(result.openai_request);$('openaiResponse').textContent=pretty(result.openai_response);$('restapResponse').textContent=pretty(result.restap);
@@ -98,10 +116,10 @@ function remember(req,result){
  const snapshot=structuredClone(req);
  const cost=inputCost(result.openai_response);if(cost===null)unknownCosts++;else totalCost+=cost;
  history.unshift({req:snapshot,result});if(history.length>50)history.pop();show(snapshot,result);
- $('history').replaceChildren();for(const item of history){const li=document.createElement('li'),button=document.createElement('button');button.textContent=`${item.req.id.slice(0,8)} · ${item.result.error??String(item.result.restap?.action)} · ${item.result.latency_ms} ms`;button.onclick=()=>{if(!busy)show(item.req,item.result);};li.append(button);$('history').append(li);}
+ $('history').replaceChildren();for(const item of history){const li=document.createElement('li'),button=document.createElement('button');button.textContent=`${item.req.id.slice(0,8)} · ${item.result.error??String(item.result.restap?.action)} · ${item.result.latency_ms} ms`;button.onclick=()=>{if(!busy)show(item.req,item.result);};li.append(button,scoreView(item.result.restap));$('history').append(li);}
 }
 async function decide(req){
- showImages(req);
+ showImages(req);$('scores').replaceChildren();
  $('status').textContent='Calling OpenAI Decisions…';$('choice').textContent='Deciding…';$('choice').classList.remove('error');$('latency').textContent='— ms';
  $('restapRequest').textContent=pretty(JSON.parse(JSON.stringify(req,(_k,v)=>typeof v==='string'&&v.startsWith('data:image/')?`${v.slice(0,65)}… [image shortened for display]`:v)));
  for(const id of ['openaiRequest','openaiResponse','restapResponse'])$(id).textContent='—';
@@ -217,7 +235,7 @@ async function runRealtime(){
   if(verdict.status==='applied'){target=targetFor(game,result.restap.action);targetZone=result.restap.action;}
   else {rtStats.discarded++;if(verdict.status==='stale')rtStats.stale++;}
   const note=`${frameCount} frame(s) · Frame ${current.frame} → ${game.frame}: ${result.restap?.action??result.error??'null'} · ${verdict.status} · latency ${Math.round(receivedAt-capturedAt)} ms · age at ${verdict.status==='applied'?'apply':'discard'} ${Math.round(verdict.ageMs)} ms`;
-  caption.textContent=note;breakNote(note);drawRealtimeStats();
+  caption.textContent=note;card.append(scoreView(result.restap));breakNote(note);drawRealtimeStats();
   // Refusals/errors leave the last target in force. No retries of this snapshot.
   if(!breakRunning||breakTurn>=limit)break;
   const delay=Math.max(0,interval-(performance.now()-capturedAt));

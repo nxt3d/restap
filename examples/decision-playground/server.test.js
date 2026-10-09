@@ -75,3 +75,46 @@ describe('local decision playground', () => {
  expect(toOpenAI(body).input[0].content.filter(c=>c.type==='input_image').map(c=>c.image_url)).toEqual(body.context.images);
  body.context.images.push(image);expect(()=>validate(body)).toThrow('too_many_images');
  });
+
+describe('decision 8 backend scores', () => {
+  const choice = scores => ({type:'choice',name:'action',choice:'north',...scores});
+  it.each([
+    [{}, {}],
+    [{confidence:0}, {confidence:0}],
+    [{confidence:1}, {confidence:1}],
+    [{probabilities:[{value:'wait',probability:0.22},{value:'north',probability:0.71}]}, {probabilities:{wait:0.22,north:0.71}}],
+    [{confidence:0.4,probabilities:[{value:'north',probability:0},{value:'wait',probability:1}]}, {confidence:0.4,probabilities:{north:0,wait:1}}],
+  ])('preserves independent scores without normalization %j',async(scores,expected)=>{
+    const {app}=setup(choice(scores));const result=await post(app,payload());
+    expect(result.status).toBe(200);expect(result.body.restap).toEqual({id:'test-1',action:'north',...expected});
+  });
+  it.each([-0.1,1.1,null,'0.5',true,{},NaN,Infinity])('omits invalid confidence %j',async confidence=>{
+    const {app}=setup(choice({confidence}));expect((await post(app,payload())).body.restap).toEqual({id:'test-1',action:'north'});
+  });
+  it.each([
+    [], [{value:'north',probability:1}],
+    [{value:'north',probability:0.5},{value:'north',probability:0.5}],
+    [{value:'north',probability:0.5},{value:'unknown',probability:0.5}],
+    [{value:'north',probability:0.5},{value:'wait',probability:0.5},{value:'extra',probability:0}],
+    [{value:'north',probability:0.5},{value:'wait',probability:-0.1}],
+    [{value:'north',probability:0.5},{value:'wait',probability:1.1}],
+    [{value:'north',probability:0.5},{value:'wait',probability:'0.5'}],
+    [{value:'north',probability:0.5},null],
+    [{value:false,probability:0.5},{value:'wait',probability:0.5}],
+    {north:0.5,wait:0.5}, null,
+  ])('omits partial or invalid probability arrays %j',async probabilities=>{
+    const {app}=setup(choice({confidence:0.25,probabilities}));
+    expect((await post(app,payload())).body.restap).toEqual({id:'test-1',action:'north',confidence:0.25});
+  });
+  it('omits both scores for refusal even if supplied by backend',async()=>{
+    const {app}=setup({type:'refusal',name:'action',confidence:1,probabilities:[{value:'north',probability:1},{value:'wait',probability:0}]});
+    expect((await post(app,payload())).body.restap).toEqual({id:'test-1',action:null});
+  });
+  it('preserves opaque special object keys safely',async()=>{
+    const body=payload();body.actions[0].id='__proto__';body.actions[1].id='constructor';
+    const {app}=setup({type:'choice',name:'action',choice:'__proto__',confidence:0.8,probabilities:[{value:'__proto__',probability:0.8},{value:'constructor',probability:0.2}]});
+    const result=await post(app,body);
+    expect(Object.keys(result.body.restap.probabilities)).toEqual(['__proto__','constructor']);
+    expect(result.body.restap.probabilities.__proto__).toBe(0.8);
+  });
+});

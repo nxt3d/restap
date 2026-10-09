@@ -14,7 +14,7 @@ function harness() {
   replaceChildren(...items){this.children=[];this.append(...items);}
   get lastChild(){return this.children.at(-1);}
   remove(){this.parent.children=this.parent.children.filter(x=>x!==this);}
-  removeAttribute(){} scrollIntoView(){}
+  removeAttribute(){} setAttribute(name,value){this[name]=value;} scrollIntoView(){}
   getContext(){return new Proxy({},{get:()=>()=>{},set:()=>true});}
   toDataURL(){return 'data:image/png;base64,'+String(++imageNumber);}
  }
@@ -26,7 +26,7 @@ function harness() {
  vm.runInContext(script,context);
  const advance=ms=>{now+=ms;const callbacks=[...raf.values()];raf.clear();for(const cb of callbacks)cb(now);};
  const flush=async()=>{for(let i=0;i<12;i++)await Promise.resolve();};
- const reply=async(index,action='zone-8')=>{const {req,resolve}=pending[index];resolve({json:async()=>({restap:{id:req.id,action},latency_ms:100,openai_response:{usage:{input_tokens:100}}})});await flush();};
+ const reply=async(index,action='zone-8',scores={})=>{const {req,resolve}=pending[index];resolve({json:async()=>({restap:{id:req.id,action,...scores},latency_ms:100,openai_response:{usage:{input_tokens:100}}})});await flush();};
  return {el,pending,advance,reply,flush};
 }
 describe('real-time page controller',()=>{
@@ -97,5 +97,30 @@ describe('input mode isolation and session comparison',()=>{
    if(i===3&&count===4)expect(new Set(c.images).size).toBe(4);
    h.advance(100);await h.reply(i);
   }await done;
+ });
+});
+
+
+describe('score display',()=>{
+ it('shows unmodified scores in history and snapshot strip without selecting the highest probability',async()=>{
+  const h=harness();h.el('breakTurns').value='1';const done=h.el('breakPlay').onclick();
+  await h.reply(0,'zone-8',{confidence:0,probabilities:{'zone-8':0.1,stay:0.9}});await done;
+  const snapshot=h.el('snapshotStrip').children[0].children[2];
+  const history=h.el('history').children[0].children[1];
+  for(const box of [snapshot,history,h.el('scores').children[0]]){
+   expect(box.children[0].textContent).toBe('Confidence: 0');
+   expect(box.children[1].children[0].textContent).toBe('zone-8');
+   expect(box.children[1].children[1].value).toBe(0.1);
+   expect(box.children[2].children[1].value).toBe(0.9);
+  }
+  expect(h.el('realtimeStats').textContent).toContain('Target zone-8');
+  h.el('history').children[0].children[0].onclick();
+  expect(h.el('scores').children[0].children[0].textContent).toBe('Confidence: 0');
+ });
+ it('labels absent scores and never renders scores for refusal',async()=>{
+  const h=harness();h.el('breakTurns').value='2';const done=h.el('breakPlay').onclick();
+  await h.reply(0);await h.reply(1,null,{confidence:1,probabilities:{stay:1}});await done;
+  expect(h.el('history').children[1].children[1].children[0].textContent).toBe('Confidence not provided');
+  expect(h.el('snapshotStrip').children[0].children[2].textContent).toBe('Scores not provided');
  });
 });

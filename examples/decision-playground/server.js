@@ -56,6 +56,22 @@ export function toOpenAI({ context, actions }) {
   };
 }
 
+// OpenAI choice answers expose confidence and [{ value, probability }].
+// Optional diagnostics never synthesize, normalize, or influence the choice.
+export function backendScores(answer, actions) {
+  const unit = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+  const scores = {};
+  if (unit(answer.confidence)) scores.confidence = answer.confidence;
+  const entries = answer.probabilities;
+  const offered = new Set(actions.map(action => action.id));
+  if (Array.isArray(entries) && entries.length === offered.size &&
+      entries.every(entry => object(entry) && typeof entry.value === 'string' && offered.has(entry.value) && unit(entry.probability)) &&
+      new Set(entries.map(entry => entry.value)).size === offered.size) {
+    scores.probabilities = Object.fromEntries(entries.map(entry => [entry.value, entry.probability]));
+  }
+  return scores;
+}
+
 export function displayRequest(request) {
   return JSON.parse(JSON.stringify(request, (key, value) => key === 'image_url'
     ? `${value.slice(0, 65)}… [${value.length} characters; image truncated for display]` : value));
@@ -112,7 +128,7 @@ export function createApp({ apiKey = '', fetchImpl = globalThis.fetch, timeoutMs
       if (answer.type === 'refusal') action = null;
       else if (answer.type === 'choice' && typeof answer.choice === 'string' && req.body.actions.some(a => a.id === answer.choice)) action = answer.choice;
       else fail('invalid_backend_response', 502);
-      result.restap = { id: req.body.id, action };
+      result.restap = { id: req.body.id, action, ...(action === null ? {} : backendScores(answer, req.body.actions)) };
       result.latency_ms = Math.round(performance.now() - start);
       send(res, 200, result);
     } catch (error) {
