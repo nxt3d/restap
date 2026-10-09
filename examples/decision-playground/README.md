@@ -182,3 +182,54 @@ node examples/decision-playground/runner-compare.js --live \
   --canvas-module /absolute/scratch/node_modules/@napi-rs/canvas/index.js \
   --output /absolute/path/outside/repo/lane-runner-live.json
 ```
+
+## Turn-based Lane Runner
+
+Open `/turn-runner.html` from either game. Breakout and the real-time runner
+remain available. The new game pauses simulation for one `/decide` request per
+row, then animates the chosen lane and forward step (350 ms by default). Animation
+speed does not affect rules or decisions. Play continues until death or the turn
+limit; Step advances one row. Pause aborts a waiting request, or lets an already
+accepted move finish. Errors/refusals pause without inventing a move.
+
+All five `Move to lane k for the next row` actions are always offered. Any lane
+change is legal. Walls kill even during a jump; trenches kill on the ground.
+Entering a ramp while grounded arms a jump over exactly the next row, in any
+lane. An airborne runner cannot activate another ramp. Coins are optional and
+collected in the chosen cell. `missed ramp` means an unarmed jump into a
+full-width trench; other trench deaths are `trench`. Fatal rows are excluded
+from rows survived. Turn-limit results are censored (alive), not deaths.
+
+Each seeded 180-row course contains single-gap walls, ramp/full-trench pairs,
+partial trenches, and tempting coins beside required ramps. Reset with
+“Replay the same seed” checked repeats the course. New seed changes it.
+The perfect planner uses dynamic programming over the course, maximizing
+survival then coins, without an API. Generated-course solvability is tested
+for 100 seeds through all 180 rows.
+
+State observations contain current lane, `jumpingNextRow`, and six upcoming
+rows as `{row: 1..6, cells: [{lane: 1..5, object: ...}]}`. Image observations
+are the actual visible canvas, including the jump-ready badge and HUD.
+One frame is the default; two frames means previous/current decision views
+(oldest first), with only the current frame available on the first turn.
+Images-only omits structured state entirely. Toggle A adds the rule text;
+the objective, lane numbering and unrestricted movement remain in every mode.
+No safe-move filtering or planner recommendation is passed to the model.
+
+The opt-in comparison uses the same canvas renderer, seeds 1–5, 60 turns per
+game, state-only + A and images-only + A, one frame, one-second pauses between
+calls and two seconds between games, at most 600 calls, and no retries. API
+errors/refusals are reported as censored stops. It also runs a zero-API planner
+baseline on each seed. Install an optional `@napi-rs/canvas` outside the repo and
+provide its absolute entry point:
+
+```sh
+OPENAI_API_KEY=... node examples/decision-playground/turn-compare.js --live \
+  --canvas-module /absolute/path/to/@napi-rs/canvas/index.js \
+  --output /absolute/path/outside/repo/turn-runner-live.json
+```
+
+The runner reads only `OPENAI_API_KEY` for this opt-in command. Ordinary tests
+remain mocked. The output checkpoints each attempt and includes per-game
+metrics, traces, call counts, latency, and planner results. The UI also exports
+completed/reset game results as JSON.

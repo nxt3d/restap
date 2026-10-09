@@ -99,7 +99,7 @@ export function createApp({ apiKey = '', fetchImpl = globalThis.fetch, timeoutMs
   });
   app.get('/config', (_req, res) => res.json(playgroundLimits));
   app.get('/', (_req, res) => res.sendFile(PAGE));
-  for (const file of ['runner.html', 'runner.js', 'runner-ui.js']) app.get('/'+file, (_req, res) => res.sendFile(fileURLToPath(new URL('./'+file, import.meta.url))));
+  for (const file of ['runner.html', 'runner.js', 'runner-ui.js', 'turn-runner.html', 'turn-runner.js', 'turn-render.js', 'turn-ui.js']) app.get('/'+file, (_req, res) => res.sendFile(fileURLToPath(new URL('./'+file, import.meta.url))));
   app.get('/breakout.js', (_req, res) => res.sendFile(fileURLToPath(new URL('./breakout.js', import.meta.url))));
   app.post('/decide', (req, res, next) => {
     if (!req.is('application/json')) return send(res, 415, envelope('unsupported_media_type'));
