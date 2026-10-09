@@ -11,6 +11,12 @@
 <header><div class="eyebrow">RESTAP / LOCAL LAB</div><h1>Decision Playground</h1><p class="muted">See the context, offered actions, provider request and answer for every decision. OpenAI · gpt-6-luna</p></header>
 <main class="layout">
 <section>
+<div class="card"><div class="eyebrow">HEADLINE DEMO</div><h2>Breakout · paused decisions</h2><p class="muted">Clear the bricks. The simulation freezes while the model chooses left, right or stay.</p>
+<canvas id="breakout" width="480" height="360" style="max-width:480px" aria-label="Breakout game with ball, paddle and bricks"></canvas>
+<p id="gameStats" aria-live="polite"></p>
+<div class="row"><label for="frames">Frames / decision (K)</label><input id="frames" type="number" min="1" max="120" value="20"><label for="breakTurns">Max turns</label><input id="breakTurns" type="number" min="1" max="500" value="50"></div>
+<div class="row"><button id="breakPlay" class="primary">Play Breakout</button><button id="breakPause" disabled>Pause</button><button id="breakStep">Step decision</button><button id="breakReset">Reset</button></div>
+<p><small>Moves use 4 px/frame, clamped at walls. Pause finishes the current decision and frame block. Max turns is the total budget since Reset.</small></p><ol id="breakLog" style="max-height:220px;overflow:auto"></ol></div>
 <div class="card"><h2>Auto-play · screenshot → decision → move</h2><p class="muted">Blue player P → green exit X. Avoid the red enemy E and dark walls. North is up; enemy stays still.</p>
 <canvas id="world" width="360" height="360" aria-label="Six by six grid world showing the player, enemy, walls and exit"></canvas>
 <div class="row"><label for="turns" style="margin:0">Max turns</label><input id="turns" type="number" min="1" max="50" value="12"><button id="auto" class="primary">Auto-play</button><button id="stop" disabled>Stop</button><button id="reset">Reset grid</button></div>
@@ -29,7 +35,7 @@
 </section>
 <section>
 <div class="card result" aria-live="polite"><div><h2>Chosen action</h2><div id="choice" class="action">Ready</div></div><div><strong id="latency">— ms</strong><div class="muted">server round trip</div></div></div>
-<div id="status" role="status"></div><div id="actionChips" class="row" style="margin-bottom:16px"></div>
+<div class="card"><h2>Observation sent</h2><img id="sentImage" hidden alt="Exact canvas screenshot sent for this decision" style="width:100%;max-width:480px"><p id="cost">Input cost: — · Running input total: $0.00000000</p><small>Estimate at $0.10 / 1M input tokens, per Prem. Output charges excluded. Missing usage is unknown, not zero.</small></div><div id="status" role="status"></div><div id="actionChips" class="row" style="margin-bottom:16px"></div>
 <div class="panels">
 <div class="card"><h2>02 · RESTAP request</h2><pre id="restapRequest">Choose a scenario, then Decide.</pre></div>
 <div class="card"><h2>03 · OpenAI request</h2><p><small>Exact JSON body; only image data is shortened.</small></p><pre id="openaiRequest">—</pre></div>
@@ -39,13 +45,15 @@
 <div class="card" style="margin-top:16px"><h2>Run history</h2><p class="muted">Select a run to inspect its inputs and result. Last 50 runs, in memory only.</p><ol id="history"><li>No decisions yet.</li></ol></div>
 <details class="card"><summary>What you are seeing</summary><p>This is a diagnostic playground, not the full protocol endpoint. <code>POST /decide</code> wraps the small RESTAP response with provider diagnostics. These panels show inputs and outputs, not hidden model reasoning.</p><p>Only an explicit OpenAI refusal becomes <code>action: null</code>. A chosen <code>wait</code> advances a turn; null pauses. Invalid output, provider failures and timeouts are errors.</p><p><a href="https://developers.openai.com/api/docs/guides/decisions" target="_blank" rel="noreferrer">Official OpenAI Decisions documentation</a></p></details>
 </section></main>
-<script>
+<script type="module">
+import {freshBreakout, finished, actionsFor, advanceFrame, inputCost} from "/breakout.js";
 const $ = id => document.getElementById(id);
 const pretty = value => JSON.stringify(value, null, 2);
 const gridActions = ['north','south','east','west','wait'].map(id => ({id,description:id==='wait'?'Stay in place for one turn.':`Move one tile ${id}; blocked by walls or grid edges.`}));
 const objective = 'Reach the exit while avoiding the stationary enemy and walls. Coordinates x increase east, y increase south. North decreases y. Move one tile per turn; never enter the enemy tile. Choose a route to the exit.';
 const freshWorld = () => ({width:6,height:6,player:{x:0,y:5},exit:{x:5,y:0},enemy:{x:3,y:2},walls:[{x:1,y:1},{x:1,y:2},{x:1,y:3},{x:3,y:4},{x:4,y:4}],turn:0});
 let world=freshWorld(), gridEvents=[], upload=null, busy=false, playing=false, runToken=0;
+let totalCost=0, unknownCosts=0;
 const history=[];
 const same=(a,b)=>a.x===b.x&&a.y===b.y;
 function draw(){
@@ -69,21 +77,25 @@ function loadPreset(){
  }
  fill(req);
 }
-function setBusy(value){busy=value;$('fields').disabled=value;$('preset').disabled=value;$('auto').disabled=value;$('reset').disabled=value;$('turns').disabled=value;$('stop').disabled=!playing;}
+function setBusy(value){busy=value;$('fields').disabled=value;$('preset').disabled=value;$('auto').disabled=value;$('reset').disabled=value;$('turns').disabled=value;$('stop').disabled=!playing;for(const id of ['breakPlay','breakStep','breakReset','frames','breakTurns'])$(id).disabled=value;$('breakPause').disabled=!breakRunning;}
 function show(req,result){
- $('restapRequest').textContent=pretty(req);$('openaiRequest').textContent=pretty(result.openai_request);$('openaiResponse').textContent=pretty(result.openai_response);$('restapResponse').textContent=pretty(result.restap);
+ const img=req.context.images?.[0];$('sentImage').hidden=!img;if(img)$('sentImage').src=img;else $('sentImage').removeAttribute('src');
+ const cost=inputCost(result.openai_response);$('cost').textContent=`Input cost: ${cost===null?'unknown':'$'+cost.toFixed(8)} · Running input total: $${totalCost.toFixed(8)}${unknownCosts?' + '+unknownCosts+' unknown':''}`;
+ $('restapRequest').textContent=pretty(JSON.parse(JSON.stringify(req,(_k,v)=>typeof v==='string'&&v.startsWith('data:image/')?`${v.slice(0,65)}… [image shortened for display]`:v)));$('openaiRequest').textContent=pretty(result.openai_request);$('openaiResponse').textContent=pretty(result.openai_response);$('restapResponse').textContent=pretty(result.restap);
  $('latency').textContent=`${result.latency_ms??0} ms`;
  $('choice').textContent=result.error?'Error':result.restap?.action===null?'null · paused':result.restap?.action??'—';$('choice').classList.toggle('error',!!result.error);
  $('status').textContent=result.error?`RESTAP error: ${result.error}`:`Request ${req.id}`;
  $('actionChips').replaceChildren();for(const action of Array.isArray(req.actions)?req.actions:[]){const el=document.createElement('span');el.className='badge'+(result.restap?.action===action?.id?' chosen':'');el.textContent=action?.id??'(invalid action)';$('actionChips').append(el);}
 }
 function remember(req,result){
- // Store shortened images so a long run doesn't retain dozens of full uploads.
- const snapshot=JSON.parse(JSON.stringify(req,(_key,v)=>typeof v==='string'&&v.startsWith('data:image/')?`${v.slice(0,65)}… [image shortened for display]`:v));
+ // Retain the exact observation for the bounded, in-memory history.
+ const snapshot=structuredClone(req);
+ const cost=inputCost(result.openai_response);if(cost===null)unknownCosts++;else totalCost+=cost;
  history.unshift({req:snapshot,result});if(history.length>50)history.pop();show(snapshot,result);
  $('history').replaceChildren();for(const item of history){const li=document.createElement('li'),button=document.createElement('button');button.textContent=`${item.req.id.slice(0,8)} · ${item.result.error??String(item.result.restap?.action)} · ${item.result.latency_ms} ms`;button.onclick=()=>{if(!busy)show(item.req,item.result);};li.append(button);$('history').append(li);}
 }
 async function decide(req){
+ const img=req.context.images?.[0];$('sentImage').hidden=!img;if(img)$('sentImage').src=img;
  $('status').textContent='Calling OpenAI Decisions…';$('choice').textContent='Deciding…';$('choice').classList.remove('error');$('latency').textContent='— ms';
  $('restapRequest').textContent=pretty(JSON.parse(JSON.stringify(req,(_k,v)=>typeof v==='string'&&v.startsWith('data:image/')?`${v.slice(0,65)}… [image shortened for display]`:v)));
  for(const id of ['openaiRequest','openaiResponse','restapResponse'])$(id).textContent='—';
@@ -126,5 +138,36 @@ $('stop').onclick=()=>{playing=false;runToken++;$('stop').disabled=true;$('statu
 $('reset').onclick=()=>{if(busy)return;world=freshWorld();gridEvents=[];$('steps').replaceChildren();draw();$('preset').value='grid';loadPreset();};
 $('preset').onchange=loadPreset;$('clearImage').onclick=clearImage;
 $('image').onchange=async()=>{const file=$('image').files[0];if(!file){clearImage();return;}if(file.size>5*1024*1024){clearImage();$('status').textContent='Image exceeds 5 MiB.';return;}setBusy(true);try{upload=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file);});$('imagePreview').src=upload;$('imagePreview').hidden=false;}catch{clearImage();$('status').textContent='Could not read image.';}finally{setBusy(false);}};
-draw();loadPreset();
+let game=freshBreakout(), breakRunning=false, breakTurn=0, breakEvents=['Game started.'];
+function drawBreakout(){
+ const c=$('breakout').getContext('2d');c.fillStyle='#142738';c.fillRect(0,0,480,360);
+ game.bricks.forEach((b,i)=>{c.fillStyle=['#57dac3','#ffcc73','#ef859d'][Math.floor(b.y/25)-1]??'#57dac3';c.fillRect(b.x,b.y,b.width,b.height);});
+ c.fillStyle='#f3f7fb';c.fillRect(game.paddle.x,game.paddle.y,game.paddle.width,game.paddle.height);c.beginPath();c.arc(game.ball.x,game.ball.y,game.ball.radius,0,Math.PI*2);c.fill();
+ c.font='14px monospace';c.fillText(`SCORE ${game.score}    LIVES ${game.lives}    FRAME ${game.frame}`,15,22);
+ $('gameStats').textContent=`Score ${game.score} · Lives ${game.lives} · Bricks ${game.bricksLeft} · Frame ${game.frame} · Turn ${breakTurn}${finished(game)?(game.lives?' · You won!':' · Game over'):''}`;
+}
+function breakNote(text){const li=document.createElement('li');li.textContent=text;$('breakLog').append(li);$('breakLog').scrollTop=$('breakLog').scrollHeight;}
+async function runBreakout(single=false){
+ if(busy)return;const k=Number($('frames').value),limit=Number($('breakTurns').value);
+ if(!Number.isInteger(k)||k<1||k>120||!Number.isInteger(limit)||limit<1||limit>500){$('status').textContent='Use 1–120 frames and 1–500 turns.';return;}
+ if(finished(game)||breakTurn>=limit){$('status').textContent='Reset the game or increase the turn budget to continue.';return;}
+ breakRunning=true;setBusy(true);
+ try{do{
+  drawBreakout();const req={id:crypto.randomUUID(),context:{text:'Play Breakout: clear all bricks, maximize score and preserve lives by keeping the paddle under the ball. Coordinates start at top left; positive vy moves down. Simulation is paused during inference. Each action advances exactly '+k+' frames unless the game ends.',state:structuredClone(game),events:[...breakEvents],images:[$('breakout').toDataURL('image/png')]},actions:actionsFor(game,k)};
+  fill(req);const result=await decide(req);breakTurn++;
+  const action=result.restap?.action,cost=inputCost(result.openai_response);
+  breakNote(`Turn ${breakTurn}: ${result.error??String(action)} · ${result.latency_ms} ms · input ${cost===null?'unknown':'$'+cost.toFixed(8)}`);
+  if(result.error||action===null){breakNote('Paused; no frames advanced.');break;}
+  if(result.restap?.id!==req.id||!req.actions.some(a=>a.id===action)){breakNote('Invalid response; no frames advanced.');break;}
+  breakEvents=[];
+  for(let f=0;f<k&&!finished(game);f++){await new Promise(requestAnimationFrame);advanceFrame(game,action,breakEvents);drawBreakout();}
+  if(!breakEvents.length)breakEvents.push(`Advanced ${k} frames; no collisions.`);
+  breakNote(breakEvents.join(' '));
+ }while(!single&&breakRunning&&!finished(game)&&breakTurn<limit);
+ }catch{breakNote('Paused after an unexpected error.');}finally{breakRunning=false;setBusy(false);drawBreakout();}
+}
+$('breakPlay').onclick=()=>runBreakout();$('breakStep').onclick=()=>runBreakout(true);
+$('breakPause').onclick=()=>{breakRunning=false;$('breakPause').disabled=true;$('status').textContent='Pausing after the current decision and frame block.';};
+$('breakReset').onclick=()=>{if(busy)return;game=freshBreakout();breakTurn=0;breakEvents=['Game started.'];$('breakLog').replaceChildren();drawBreakout();};
+drawBreakout();draw();loadPreset();
 </script></body></html>

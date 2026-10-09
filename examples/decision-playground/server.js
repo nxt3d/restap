@@ -81,6 +81,7 @@ export function createApp({ apiKey = '', fetchImpl = globalThis.fetch, timeoutMs
     next();
   });
   app.get('/', (_req, res) => res.sendFile(PAGE));
+  app.get('/breakout.js', (_req, res) => res.sendFile(fileURLToPath(new URL('./breakout.js', import.meta.url))));
   app.post('/decide', (req, res, next) => {
     if (!req.is('application/json')) return send(res, 415, envelope('unsupported_media_type'));
     if (req.headers['content-encoding'] && req.headers['content-encoding'] !== 'identity') return send(res, 415, envelope('unsupported_content_encoding'));

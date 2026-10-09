@@ -13,6 +13,9 @@ The server reads `OPENAI_API_KEY` at startup, or falls back to `/Users/nxt3d/pro
 
 ## Try it
 
+- **Breakout** is the headline demo. Play runs a paused loop; Step decision requests and executes one action. Each request includes the exact canvas PNG, ball position/velocity, paddle geometry, remaining bricks, score, lives, frame and previous block's events. Left/right move 4 px/frame (wall-clamped); stay holds. Descriptions include exact distance and K. Adjust K from 1–120 frames and the total turn budget from 1–500. Pause finishes the pending decision/frame block, then stops; Reset starts a new game. Refusal/errors advance no frames. Terminal games stop immediately.
+- The observation panel shows the exact screenshot sent, including when inspecting history. Input cost uses `usage.input_tokens × $0.10 / 1,000,000`, at Prem's supplied rate. Per-decision estimates and the tab's running input total exclude output charges. Missing usage is explicitly unknown. Resetting a game does not erase accumulated costs.
+
 - Choose the **text** preset and press **Decide** for a support-routing choice.
 - Choose **grid** for an editable single decision; optionally upload an image. **Auto-play** supplies the canvas PNG plus fresh state and prior outcomes each turn, executes the returned move and stops on exit, enemy collision, refusal, error, Stop, or the selected turn limit (1–50). The enemy is stationary. Reset starts a new world. Stop discards a pending move, although the provider call may finish.
 - The **refusal / null probe** asks for an unsafe choice without executing it. Refusal is model-dependent, not guaranteed. Only an explicit provider refusal maps to null; no sentinel choice or confidence threshold is added.
