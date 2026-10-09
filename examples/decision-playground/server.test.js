@@ -1,6 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import request from 'supertest';
-import { createApp, validate, toOpenAI } from './server.js';
+import { mkdtempSync, writeFileSync, unlinkSync, rmdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createApp, validate, toOpenAI, loadApiKey } from './server.js';
 
 const payload = () => ({ id: 'test-1', context: { text: 'Move safely.' }, actions: [{ id: 'north', description: 'Move north.' }, { id: 'wait', description: 'Wait.' }] });
 const response = answer => ({ ok: true, text: async () => JSON.stringify({ answers: [answer] }) });
@@ -116,5 +119,32 @@ describe('decision 8 backend scores', () => {
     const result=await post(app,body);
     expect(Object.keys(result.body.restap.probabilities)).toEqual(['__proto__','constructor']);
     expect(result.body.restap.probabilities.__proto__).toBe(0.8);
+  });
+});
+
+
+describe('startup API key resolution', () => {
+  it('prefers trimmed environment credentials, falls back to a temp file, and warns only when missing', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'restap-key-test-'));
+    const keyFile = join(directory, 'key.txt');
+    const warn = vi.fn();
+    try {
+      writeFileSync(keyFile, '  fake-file-key\n');
+      expect(loadApiKey({env:{OPENAI_API_KEY:'  fake-env-key\n'},keyFile,warn})).toBe('fake-env-key');
+      expect(loadApiKey({env:{},keyFile,warn})).toBe('fake-file-key');
+      expect(loadApiKey({env:{OPENAI_API_KEY:' \t'},keyFile,warn})).toBe('fake-file-key');
+      expect(warn).not.toHaveBeenCalled();
+      writeFileSync(keyFile, ' \n');
+      expect(loadApiKey({env:{},keyFile,warn})).toBe('');
+      expect(warn).toHaveBeenLastCalledWith('No API key configured. Decisions will return decision_backend_unavailable.');
+      unlinkSync(keyFile);
+      expect(loadApiKey({env:{},keyFile,warn})).toBe('');
+      expect(warn).toHaveBeenCalledTimes(2);
+      expect(loadApiKey({env:{OPENAI_API_KEY:'fake-env-key'},keyFile,warn})).toBe('fake-env-key');
+      expect(warn).toHaveBeenCalledTimes(2);
+    } finally {
+      try { unlinkSync(keyFile); } catch { /* Already removed for missing-file case. */ }
+      rmdirSync(directory);
+    }
   });
 });

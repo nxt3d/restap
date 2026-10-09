@@ -20,7 +20,7 @@
 <div class="row"><label for="frames">Frames / decision (K)</label><input id="frames" type="number" min="1" max="120" value="20"><label for="breakTurns">Max decisions</label><input id="breakTurns" type="number" min="1" max="500" value="50"></div>
 <div class="row"><button id="breakPlay" class="primary">Play Breakout</button><button id="breakPause" disabled>Stop</button><button id="breakStep">Step decision</button><button id="breakReset">Reset</button></div>
 <p><small>Real-time: eight target zones + stay; max 4 px/simulation frame. Interval is the minimum time between request starts (0 = immediately after each reply). Stop discards pending replies. Paused mode uses left/right/stay for K frames. Decision budget is total since Reset. Real-time input modes compare full state, images only, or both. Images are recent decision snapshots, oldest first; missing history is padded and labeled. Results below survive Reset for this tab session.</small></p><p id="realtimeStats" aria-live="polite"></p><div id="snapshotStrip" style="display:flex;gap:8px;overflow:auto"></div><ol id="breakLog" style="max-height:220px;overflow:auto"></ol></div>
-<div class="card"><h2>Real-time · session comparison</h2><p><small>Accumulated across runs and resets, grouped by input mode, image count and speed. Tracking = paddle contacts / approaches to paddle height; — means no approaches yet. Input cost uses the supplied $0.10/M token estimate; unknown usage is excluded and counted. Output charges excluded.</small></p><div style="overflow:auto"><table style="width:100%;text-align:left;font-size:13px"><thead><tr><th>Input / speed</th><th>Decisions</th><th>Avg latency</th><th>Input / decision</th><th>Decisions/s</th><th>Stale</th><th>Tracking</th></tr></thead><tbody id="modeResults"></tbody></table></div></div>
+<div class="card"><h2>Real-time · session comparison</h2><p><small>Accumulated across runs and resets, grouped by input mode, image count and speed. Tracking = paddle contacts / approaches to paddle height; — means no approaches yet. Input cost uses the supplied $0.10/M token estimate; unknown usage is excluded and counted. Output charges excluded.</small></p><div style="overflow:auto"><table style="width:100%;text-align:left;font-size:13px"><thead><tr><th>Input / speed</th><th>Decisions</th><th>Errors</th><th>Avg latency</th><th>Input / decision</th><th>Decisions/s</th><th>Stale</th><th>Tracking</th></tr></thead><tbody id="modeResults"></tbody></table></div></div>
 <div class="card"><h2>Auto-play · screenshot → decision → move</h2><p class="muted">Blue player P → green exit X. Avoid the red enemy E and dark walls. North is up; enemy stays still.</p>
 <canvas id="world" width="360" height="360" aria-label="Six by six grid world showing the player, enemy, walls and exit"></canvas>
 <div class="row"><label for="turns" style="margin:0">Max turns</label><input id="turns" type="number" min="1" max="50" value="12"><button id="auto" class="primary">Auto-play</button><button id="stop" disabled>Stop</button><button id="reset">Reset grid</button></div>
@@ -167,7 +167,7 @@ let breakGeneration=0, target=game.paddle.x, targetZone='stay', animation=0, wak
 let snapshotsHistory=[], lastFrameCount=null;
 const modeResults=new Map();
 let activeResult=null;
-let rtStats={completed:0,latency:0,stale:0,discarded:0,elapsed:0}, activeSince=null;
+let rtStats={completed:0,errors:0,latency:0,stale:0,discarded:0,elapsed:0}, activeSince=null;
 const consumed=new Set();
 function modeControls(){const realtime=$('breakMode').value==='realtime';$('frames').disabled=busy||realtime;$('breakStep').disabled=busy||realtime;for(const id of ['maxAge','decisionInterval','inputMode'])$(id).disabled=busy||!realtime;$('frameCount').disabled=busy||!realtime||$('inputMode').value==='state';}
 function drawModeResults(){
@@ -175,14 +175,14 @@ function drawModeResults(){
  for(const row of modeResults.values()){
   const seconds=(row.elapsed+(row===activeResult&&activeSince!==null?performance.now()-activeSince:0))/1000;
   const attempts=row.contacts+row.misses;
-  const values=[row.label,row.completed,`${row.completed?Math.round(row.latency/row.completed):0} ms`,row.known?`$${(row.cost/row.known).toFixed(8)}${row.unknown?' + '+row.unknown+' unknown':''}`:`unknown (${row.unknown})`,seconds?(row.completed/seconds).toFixed(2):'0.00',`${row.completed?(100*row.stale/row.completed).toFixed(1):0}%`,attempts?`${(100*row.contacts/attempts).toFixed(1)}% (${row.contacts}/${attempts})`:'—'];
+  const values=[row.label,row.completed,row.errors,`${row.completed?Math.round(row.latency/row.completed):0} ms`,row.known?`$${(row.cost/row.known).toFixed(8)}${row.unknown?' + '+row.unknown+' unknown':''}`:`unknown (${row.unknown})`,seconds?(row.completed/seconds).toFixed(2):'0.00',`${row.completed?(100*row.stale/row.completed).toFixed(1):0}%`,attempts?`${(100*row.contacts/attempts).toFixed(1)}% (${row.contacts}/${attempts})`:'—'];
   const tr=document.createElement('tr');for(const value of values){const td=document.createElement('td');td.textContent=String(value);td.style.padding='6px';tr.append(td);}$('modeResults').append(tr);
  }
 }
 function drawRealtimeStats(){
  drawModeResults();
  const seconds=(rtStats.elapsed+(activeSince===null?0:performance.now()-activeSince))/1000;
- $('realtimeStats').textContent=`Last decision ${lastFrameCount??"—"} frame(s) · Target ${targetZone} · ${(seconds?rtStats.completed/seconds:0).toFixed(2)} decisions/s · Average latency ${rtStats.completed?Math.round(rtStats.latency/rtStats.completed):0} ms · Stale ${rtStats.stale} / discarded ${rtStats.discarded} · Running input cost $${totalCost.toFixed(8)}${unknownCosts?' + unknown usage':''}`;
+ $('realtimeStats').textContent=`Last decision ${lastFrameCount??"—"} frame(s) · Target ${targetZone} · ${(seconds?rtStats.completed/seconds:0).toFixed(2)} decisions/s · Errors ${rtStats.errors} · Average latency ${rtStats.completed?Math.round(rtStats.latency/rtStats.completed):0} ms · Stale ${rtStats.stale} / discarded ${rtStats.discarded} · Running input cost $${totalCost.toFixed(8)}${unknownCosts?' + unknown usage':''}`;
 }
 function stopBreakout(){
  breakRunning=false;breakGeneration++;cancelAnimationFrame(animation);wakeDecision?.();
@@ -196,9 +196,10 @@ async function runRealtime(){
  if(finished(game)||breakTurn>=limit)return void($('status').textContent='Reset the game or increase the decision budget.');
  breakRunning=true;const generation=++breakGeneration;setBusy(true);activeSince=performance.now();
  snapshotsHistory=[];
+ let consecutiveErrors=0;
  const inputMode=$('inputMode').value, requestedFrames=Number($('frameCount').value), imageCount=inputMode==='state'?0:requestedFrames;
  const key=`${inputMode}-${imageCount}-${speed}`;
- if(!modeResults.has(key))modeResults.set(key,{label:`${{state:'State only',images:'Images only',both:'State + images'}[inputMode]}${imageCount?' · '+imageCount+' frames':''} · ${speed}x`,completed:0,latency:0,cost:0,known:0,unknown:0,stale:0,elapsed:0,contacts:0,misses:0});
+ if(!modeResults.has(key))modeResults.set(key,{label:`${{state:'State only',images:'Images only',both:'State + images'}[inputMode]}${imageCount?' · '+imageCount+' frames':''} · ${speed}x`,completed:0,errors:0,latency:0,cost:0,known:0,unknown:0,stale:0,elapsed:0,contacts:0,misses:0});
  activeResult=modeResults.get(key);
  const tick=frameClock();
  const animate=now=>{
@@ -228,17 +229,29 @@ async function runRealtime(){
   const caption=document.createElement('figcaption');caption.textContent=`Frame ${game.frame} · pending`;card.append(img,caption);$('snapshotStrip').prepend(card);while($('snapshotStrip').children.length>6)$('snapshotStrip').lastChild.remove();
   fill(req);const result=await decide(req),receivedAt=performance.now();
   const verdict=acceptDecision({request,result,now:receivedAt,maxAgeMs,active:breakRunning&&generation===breakGeneration,game,seen:consumed});
-  lastFrameCount=frameCount;rtStats.completed++;rtStats.latency+=receivedAt-capturedAt;
-  activeResult.completed++;activeResult.latency+=receivedAt-capturedAt;
-  const cost=inputCost(result.openai_response);if(cost===null)activeResult.unknown++;else{activeResult.known++;activeResult.cost+=cost;}
+  lastFrameCount=frameCount;
+  const failed=!!result.error||['wrong ID','invalid action'].includes(verdict.status);
+  if(failed){rtStats.errors++;activeResult.errors++;consecutiveErrors++;}
+  else{
+   consecutiveErrors=0;rtStats.completed++;rtStats.latency+=receivedAt-capturedAt;
+   activeResult.completed++;activeResult.latency+=receivedAt-capturedAt;
+   const cost=inputCost(result.openai_response);if(cost===null)activeResult.unknown++;else{activeResult.known++;activeResult.cost+=cost;}
+  }
   if(verdict.status==='stale')activeResult.stale++;
   if(verdict.status==='applied'){target=targetFor(game,result.restap.action);targetZone=result.restap.action;}
-  else {rtStats.discarded++;if(verdict.status==='stale')rtStats.stale++;}
+  else if(!failed){rtStats.discarded++;if(verdict.status==='stale')rtStats.stale++;}
   const note=`${frameCount} frame(s) · Frame ${current.frame} → ${game.frame}: ${result.restap?.action??result.error??'null'} · ${verdict.status} · latency ${Math.round(receivedAt-capturedAt)} ms · age at ${verdict.status==='applied'?'apply':'discard'} ${Math.round(verdict.ageMs)} ms`;
   caption.textContent=note;card.append(scoreView(result.restap));breakNote(note);drawRealtimeStats();
-  // Refusals/errors leave the last target in force. No retries of this snapshot.
-  if(!breakRunning||breakTurn>=limit)break;
-  const delay=Math.max(0,interval-(performance.now()-capturedAt));
+  // Failed attempts never count as decisions. Pause repeated failures and let Stop cancel backoff.
+  if(!breakRunning)break;
+  if(consecutiveErrors>=3){
+   const message='Backend unavailable: check the API key and server connection. Auto-play paused after 3 consecutive errors.';
+   $('status').textContent=message;breakNote(message);break;
+  }
+  if(breakTurn>=limit)break;
+  const backoff=failed?Math.min(5000,500*2**(consecutiveErrors-1)):0;
+  const delay=Math.max(backoff,interval-(performance.now()-capturedAt),0);
+  if(failed)$('status').textContent=`Backend error: ${result.error??'invalid response'}. Retrying in ${delay} ms (${consecutiveErrors}/3).`;
   if(delay)await new Promise(resolve=>{const timer=setTimeout(()=>{wakeDecision=null;resolve();},delay);wakeDecision=()=>{clearTimeout(timer);wakeDecision=null;resolve();};});
  }
  }catch(error){breakNote(`Stopped: ${error.message}`);}finally{stopBreakout();setBusy(false);drawBreakout();}
@@ -275,7 +288,7 @@ async function runBreakout(single=false){
 }
 $('breakPlay').onclick=()=> $('breakMode').value==='realtime'?runRealtime():runBreakout();$('breakMode').onchange=()=>{target=game.paddle.x;targetZone='stay';modeControls();drawRealtimeStats();};$('breakStep').onclick=()=>runBreakout(true);
 $('breakPause').onclick=()=>{stopBreakout();$('status').textContent='Stopped; pending replies will be discarded.';};
-$('breakReset').onclick=()=>{if(busy)return;game=freshBreakout();snapshotsHistory=[];lastFrameCount=null;target=game.paddle.x;targetZone='stay';consumed.clear();rtStats={completed:0,latency:0,stale:0,discarded:0,elapsed:0};$('snapshotStrip').replaceChildren();drawRealtimeStats();breakTurn=0;breakEvents=['Game started.'];$('breakLog').replaceChildren();drawBreakout();};
+$('breakReset').onclick=()=>{if(busy)return;game=freshBreakout();snapshotsHistory=[];lastFrameCount=null;target=game.paddle.x;targetZone='stay';consumed.clear();rtStats={completed:0,errors:0,latency:0,stale:0,discarded:0,elapsed:0};$('snapshotStrip').replaceChildren();drawRealtimeStats();breakTurn=0;breakEvents=['Game started.'];$('breakLog').replaceChildren();drawBreakout();};
 $('inputMode').onchange=modeControls;
 modeControls();drawRealtimeStats();drawBreakout();draw();loadPreset();
 </script></body></html>

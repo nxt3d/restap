@@ -27,7 +27,8 @@ function harness() {
  const advance=ms=>{now+=ms;const callbacks=[...raf.values()];raf.clear();for(const cb of callbacks)cb(now);};
  const flush=async()=>{for(let i=0;i<12;i++)await Promise.resolve();};
  const reply=async(index,action='zone-8',scores={})=>{const {req,resolve}=pending[index];resolve({json:async()=>({restap:{id:req.id,action,...scores},latency_ms:100,openai_response:{usage:{input_tokens:100}}})});await flush();};
- return {el,pending,advance,reply,flush};
+ const fail=async(index,error='decision_backend_unavailable')=>{pending[index].resolve({json:async()=>({restap:{error},error,latency_ms:0,openai_response:null})});await flush();};
+ return {el,pending,advance,reply,fail,flush};
 }
 describe('real-time page controller',()=>{
  it('keeps physics running during one outstanding call, then sends a fresh snapshot and reaches budget',async()=>{
@@ -83,7 +84,7 @@ describe('input mode isolation and session comparison',()=>{
   expect(Object.keys(c).sort()).toEqual(['state','text']);expect(c.state).toMatchObject({width:480,height:360,ball:{x:240,y:270,vx:2.4,vy:-3},paddle:{x:195,width:90},score:0,lives:3,frame:0});expect(c.state.bricks).toHaveLength(24);expect(c.text).not.toMatch(/Image|frame 0/);
   h.advance(100);await h.reply(0);await done;
   const row=()=>h.el('modeResults').children[0].children.map(c=>c.textContent);
-  expect(row()).toEqual(['State only · 1x','1','100 ms','$0.00001000','10.00','0.0%','—']);
+  expect(row()).toEqual(['State only · 1x','1','0','100 ms','$0.00001000','10.00','0.0%','—']);
   h.el('breakReset').onclick();expect(row()[1]).toBe('1');
   h.el('inputMode').value='images';const second=h.el('breakPlay').onclick();await h.reply(1);await second;
   expect(h.el('modeResults').children).toHaveLength(2);expect(row()[1]).toBe('1');
@@ -122,5 +123,45 @@ describe('score display',()=>{
   await h.reply(0);await h.reply(1,null,{confidence:1,probabilities:{stay:1}});await done;
   expect(h.el('history').children[1].children[1].children[0].textContent).toBe('Confidence not provided');
   expect(h.el('snapshotStrip').children[0].children[2].textContent).toBe('Scores not provided');
+ });
+});
+
+
+describe('backend error throttling',()=>{
+ it('backs off immediate failures, separates errors from decisions, and pauses after three errors',async()=>{
+  vi.useFakeTimers();try{
+   const h=harness();h.el('breakTurns').value='50';const done=h.el('breakPlay').onclick();
+   await h.fail(0);
+   expect(h.el('realtimeStats').textContent).toContain('0.00 decisions/s · Errors 1');
+   await vi.advanceTimersByTimeAsync(499);expect(h.pending).toHaveLength(1);
+   await vi.advanceTimersByTimeAsync(1);expect(h.pending).toHaveLength(2);
+   await h.fail(1,'decision_timeout');
+   await vi.advanceTimersByTimeAsync(999);expect(h.pending).toHaveLength(2);
+   await vi.advanceTimersByTimeAsync(1);expect(h.pending).toHaveLength(3);
+   await h.fail(2);await done;
+   expect(h.el('status').textContent).toContain('Backend unavailable: check the API key');
+   expect(h.el('breakPause').disabled).toBe(true);expect(h.el('breakPlay').disabled).toBe(false);
+   expect(h.el('realtimeStats').textContent).toContain('0.00 decisions/s · Errors 3 · Average latency 0 ms');
+   const row=()=>h.el('modeResults').children[0].children.map(c=>c.textContent);
+   expect(row().slice(1,7)).toEqual(['0','3','0 ms','unknown (0)','0.00','0%']);
+   await vi.advanceTimersByTimeAsync(10000);expect(h.pending).toHaveLength(3);
+   const stopped=h.el('gameStats').textContent;h.advance(100);expect(h.el('gameStats').textContent).toBe(stopped);
+   h.el('breakReset').onclick();expect(h.el('realtimeStats').textContent).toContain('Errors 0');expect(row()[2]).toBe('3');
+  }finally{vi.useRealTimers();}
+ });
+ it('resets consecutive errors and backoff on success; Stop cancels an error wait',async()=>{
+  vi.useFakeTimers();try{
+   const h=harness();h.el('breakTurns').value='50';const done=h.el('breakPlay').onclick();
+   await h.fail(0);await vi.advanceTimersByTimeAsync(500);
+   h.advance(100);await h.reply(1);expect(h.pending).toHaveLength(3);
+   await h.fail(2);await vi.advanceTimersByTimeAsync(499);expect(h.pending).toHaveLength(3);
+   await vi.advanceTimersByTimeAsync(1);expect(h.pending).toHaveLength(4);
+   await h.fail(3);expect(h.el('status').textContent).toContain('Retrying in 1000 ms (2/3)');
+   const row=h.el('modeResults').children[0].children.map(c=>c.textContent);
+   expect(row.slice(1,5)).toEqual(['1','3','100 ms','$0.00001000']);
+   h.el('breakPause').onclick();await done;
+   await vi.advanceTimersByTimeAsync(10000);expect(h.pending).toHaveLength(4);
+   expect(h.el('status').textContent).toBe('Stopped; pending replies will be discarded.');
+  }finally{vi.useRealTimers();}
  });
 });

@@ -1,4 +1,5 @@
 import express from 'express';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const PAGE = fileURLToPath(new URL('./index.html', import.meta.url));
@@ -149,9 +150,18 @@ export function createApp({ apiKey = '', fetchImpl = globalThis.fetch, timeoutMs
   return app;
 }
 
+// Resolve only at startup; importing the app for mocked tests never reads credentials.
+export function loadApiKey({ env = process.env, keyFile = '/Users/nxt3d/projects/idchain-restap/openAI_API_Key.txt', warn = console.warn } = {}) {
+  let apiKey = env.OPENAI_API_KEY?.trim() || '';
+  if (!apiKey) {
+    try { apiKey = readFileSync(keyFile, 'utf8').trim(); } catch { /* Missing/unreadable fallback leaves the backend unavailable. */ }
+  }
+  if (!apiKey) warn('No API key configured. Decisions will return decision_backend_unavailable.');
+  return apiKey;
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  let apiKey = process.env.OPENAI_API_KEY?.trim();
-  if (!apiKey) console.warn('No API key configured. Decisions will return decision_backend_unavailable.');
+  const apiKey = loadApiKey();
   const port = Number(process.env.PORT ?? 5180);
   createApp({ apiKey }).listen(port, '127.0.0.1', () => console.log(`Decision Playground: http://localhost:${port}`));
 }
