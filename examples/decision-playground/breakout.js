@@ -6,9 +6,9 @@ export function actionsFor(s,k){
 }
 export function advanceFrame(s,action,events){
  if(finished(s))return;
- if(!['left','right','stay'].includes(action))throw Error('Invalid Breakout action');
+ if(typeof action!=='number'&&!['left','right','stay'].includes(action))throw Error('Invalid Breakout action');
  const p=s.paddle,b=s.ball,r=b.radius,oldY=b.y;
- p.x=Math.max(0,Math.min(s.width-p.width,p.x+(action==='left'?-4:action==='right'?4:0)));
+ p.x=Math.max(0,Math.min(s.width-p.width,p.x+(typeof action==='number'?Math.max(-4,Math.min(4,action-p.x)):action==='left'?-4:action==='right'?4:0)));
  b.x+=b.vx;b.y+=b.vy;s.frame++;
  if(b.x<r||b.x>s.width-r){b.x=Math.max(r,Math.min(s.width-r,b.x));b.vx=-b.vx;events.push('Ball bounced off side wall.');}
  if(b.y<r){b.y=r;b.vy=Math.abs(b.vy);events.push('Ball bounced off ceiling.');}
@@ -20,3 +20,39 @@ export function advanceFrame(s,action,events){
  if(b.y-r>s.height){s.lives--;events.push('Missed the ball, lost a life.');if(s.lives){Object.assign(b,{x:p.x+p.width/2,y:270,vx:2.4,vy:-3});}else events.push('Game over.');}
 }
 export function inputCost(response){const n=response?.usage?.input_tokens;return Number.isFinite(n)&&n>=0?n*0.10/1e6:null;}
+
+// Zones describe paddle CENTER positions; physics takes a clamped left edge.
+export function targetActions(s) {
+ return [...Array.from({length:8},(_,i)=>({id:`zone-${i+1}`,description:`Move the paddle center to zone ${i+1} of 8 (x=${i*s.width/8}–${(i+1)*s.width/8} px), targeting x=${(i+.5)*s.width/8} px, clamped at walls. Move at up to 4 px per simulation frame and hold there until a new decision.`})),{id:'stay',description:'Stop moving the paddle at its current position when this answer arrives and hold there until a new decision.'}];
+}
+export function targetFor(s,action) {
+ if(action==='stay')return s.paddle.x;
+ if(!/^zone-[1-8]$/.test(action))throw Error('Invalid target action');
+ return Math.max(0,Math.min(s.width-s.paddle.width,(Number(action.slice(5))-.5)*s.width/8-s.paddle.width/2));
+}
+// Consume every request once, including discarded replies. Age uses monotonic real
+// time, not simulation frames (which vary with game speed). A life is a revision.
+export function acceptDecision({request,result,now,maxAgeMs,active,game,seen}) {
+ const ageMs=now-request.capturedAt;
+ if(seen.has(request.id))return {status:'duplicate',ageMs};
+ seen.add(request.id);
+ let status='applied';
+ if(!active)status='stopped';
+ else if(result.error)status='error';
+ else if(result.restap?.id!==request.id)status='wrong ID';
+ else if(game.lives!==request.lives||finished(game))status='obsolete state';
+ else if(ageMs>=maxAgeMs)status='stale';
+ else if(result.restap?.action===null)status='refused';
+ else if(!request.actions.some(a=>a.id===result.restap?.action))status='invalid action';
+ return {status,ageMs};
+}
+// Fixed 60 Hz simulation driven by rAF, independent of display refresh rate.
+// Drop excessive catch-up after suspension rather than teleporting through play.
+export function frameClock() {
+ let previous=null,accumulator=0;
+ return (now,speed,step)=>{
+  if(previous===null){previous=now;return;}
+  accumulator+=Math.min(100,Math.max(0,now-previous))*speed;previous=now;
+  while(accumulator>=1000/60){step();accumulator-=1000/60;}
+ };
+}

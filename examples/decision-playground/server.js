@@ -1,8 +1,6 @@
 import express from 'express';
-import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const KEY_FILE = '/Users/nxt3d/projects/idchain-restap/openAI_API_Key.txt';
 const PAGE = fileURLToPath(new URL('./index.html', import.meta.url));
 const nonblank = value => typeof value === 'string' && value.trim().length > 0;
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -137,9 +135,6 @@ export function createApp({ apiKey = '', fetchImpl = globalThis.fetch, timeoutMs
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   let apiKey = process.env.OPENAI_API_KEY?.trim();
-  if (!apiKey) {
-    try { apiKey = readFileSync(KEY_FILE, 'utf8').trim(); } catch { apiKey = ''; }
-  }
   if (!apiKey) console.warn('No API key configured. Decisions will return decision_backend_unavailable.');
   const port = Number(process.env.PORT ?? 5180);
   createApp({ apiKey }).listen(port, '127.0.0.1', () => console.log(`Decision Playground: http://localhost:${port}`));

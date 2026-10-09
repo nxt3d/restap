@@ -11,12 +11,14 @@
 <header><div class="eyebrow">RESTAP / LOCAL LAB</div><h1>Decision Playground</h1><p class="muted">See the context, offered actions, provider request and answer for every decision. OpenAI · gpt-6-luna</p></header>
 <main class="layout">
 <section>
-<div class="card"><div class="eyebrow">HEADLINE DEMO</div><h2>Breakout · paused decisions</h2><p class="muted">Clear the bricks. The simulation freezes while the model chooses left, right or stay.</p>
+<div class="card"><div class="eyebrow">HEADLINE DEMO</div><h2>Breakout · snapshot decisions</h2><p class="muted">Real-time keeps playing while decisions arrive. Paused mode freezes for each decision.</p>
+<div class="row"><label for="breakMode">Mode</label><select id="breakMode"><option value="realtime">Real-time</option><option value="paused">Paused</option></select><label for="gameSpeed">Game speed</label><select id="gameSpeed"><option value="0.5">0.5x</option><option value="1" selected>1x</option></select></div>
+<div class="row"><label for="maxAge">Max age (ms)</label><input id="maxAge" type="number" min="1" max="30000" value="750"><label for="decisionInterval">Interval (ms)</label><input id="decisionInterval" type="number" min="0" max="10000" value="0"></div>
 <canvas id="breakout" width="480" height="360" style="max-width:480px" aria-label="Breakout game with ball, paddle and bricks"></canvas>
 <p id="gameStats" aria-live="polite"></p>
-<div class="row"><label for="frames">Frames / decision (K)</label><input id="frames" type="number" min="1" max="120" value="20"><label for="breakTurns">Max turns</label><input id="breakTurns" type="number" min="1" max="500" value="50"></div>
-<div class="row"><button id="breakPlay" class="primary">Play Breakout</button><button id="breakPause" disabled>Pause</button><button id="breakStep">Step decision</button><button id="breakReset">Reset</button></div>
-<p><small>Moves use 4 px/frame, clamped at walls. Pause finishes the current decision and frame block. Max turns is the total budget since Reset.</small></p><ol id="breakLog" style="max-height:220px;overflow:auto"></ol></div>
+<div class="row"><label for="frames">Frames / decision (K)</label><input id="frames" type="number" min="1" max="120" value="20"><label for="breakTurns">Max decisions</label><input id="breakTurns" type="number" min="1" max="500" value="50"></div>
+<div class="row"><button id="breakPlay" class="primary">Play Breakout</button><button id="breakPause" disabled>Stop</button><button id="breakStep">Step decision</button><button id="breakReset">Reset</button></div>
+<p><small>Real-time: eight target zones + stay; max 4 px/simulation frame. Interval is the minimum time between request starts (0 = immediately after each reply). Stop discards pending replies. Paused mode uses left/right/stay for K frames. Decision budget is total since Reset. One snapshot per request.</small></p><p id="realtimeStats" aria-live="polite"></p><div id="snapshotStrip" style="display:flex;gap:8px;overflow:auto"></div><ol id="breakLog" style="max-height:220px;overflow:auto"></ol></div>
 <div class="card"><h2>Auto-play · screenshot → decision → move</h2><p class="muted">Blue player P → green exit X. Avoid the red enemy E and dark walls. North is up; enemy stays still.</p>
 <canvas id="world" width="360" height="360" aria-label="Six by six grid world showing the player, enemy, walls and exit"></canvas>
 <div class="row"><label for="turns" style="margin:0">Max turns</label><input id="turns" type="number" min="1" max="50" value="12"><button id="auto" class="primary">Auto-play</button><button id="stop" disabled>Stop</button><button id="reset">Reset grid</button></div>
@@ -43,10 +45,10 @@
 <div class="card"><h2>05 · RESTAP response</h2><pre id="restapResponse">—</pre></div>
 </div>
 <div class="card" style="margin-top:16px"><h2>Run history</h2><p class="muted">Select a run to inspect its inputs and result. Last 50 runs, in memory only.</p><ol id="history"><li>No decisions yet.</li></ol></div>
-<details class="card"><summary>What you are seeing</summary><p>This is a diagnostic playground, not the full protocol endpoint. <code>POST /decide</code> wraps the small RESTAP response with provider diagnostics. These panels show inputs and outputs, not hidden model reasoning.</p><p>Only an explicit OpenAI refusal becomes <code>action: null</code>. A chosen <code>wait</code> advances a turn; null pauses. Invalid output, provider failures and timeouts are errors.</p><p><a href="https://developers.openai.com/api/docs/guides/decisions" target="_blank" rel="noreferrer">Official OpenAI Decisions documentation</a></p></details>
+<details class="card"><summary>What you are seeing</summary><p>This is a diagnostic playground, not the full protocol endpoint. <code>POST /decide</code> wraps the small RESTAP response with provider diagnostics. These panels show inputs and outputs, not hidden model reasoning.</p><p>Only an explicit OpenAI refusal becomes <code>action: null</code>. A chosen <code>wait</code> advances a grid turn. Null pauses turn-based play; real-time keeps its previous target. Invalid output, provider failures and timeouts are errors.</p><p><a href="https://developers.openai.com/api/docs/guides/decisions" target="_blank" rel="noreferrer">Official OpenAI Decisions documentation</a></p></details>
 </section></main>
 <script type="module">
-import {freshBreakout, finished, actionsFor, advanceFrame, inputCost} from "/breakout.js";
+import {freshBreakout, finished, actionsFor, advanceFrame, inputCost, targetActions, targetFor, acceptDecision, frameClock} from "/breakout.js";
 const $ = id => document.getElementById(id);
 const pretty = value => JSON.stringify(value, null, 2);
 const gridActions = ['north','south','east','west','wait'].map(id => ({id,description:id==='wait'?'Stay in place for one turn.':`Move one tile ${id}; blocked by walls or grid edges.`}));
@@ -77,13 +79,13 @@ function loadPreset(){
  }
  fill(req);
 }
-function setBusy(value){busy=value;$('fields').disabled=value;$('preset').disabled=value;$('auto').disabled=value;$('reset').disabled=value;$('turns').disabled=value;$('stop').disabled=!playing;for(const id of ['breakPlay','breakStep','breakReset','frames','breakTurns'])$(id).disabled=value;$('breakPause').disabled=!breakRunning;}
+function setBusy(value){busy=value;$('fields').disabled=value;$('preset').disabled=value;$('auto').disabled=value;$('reset').disabled=value;$('turns').disabled=value;$('stop').disabled=!playing;for(const id of ['breakPlay','breakStep','breakReset','frames','breakTurns','breakMode','gameSpeed','maxAge','decisionInterval'])$(id).disabled=value;$('breakPause').disabled=!breakRunning;modeControls();}
 function show(req,result){
  const img=req.context.images?.[0];$('sentImage').hidden=!img;if(img)$('sentImage').src=img;else $('sentImage').removeAttribute('src');
  const cost=inputCost(result.openai_response);$('cost').textContent=`Input cost: ${cost===null?'unknown':'$'+cost.toFixed(8)} · Running input total: $${totalCost.toFixed(8)}${unknownCosts?' + '+unknownCosts+' unknown':''}`;
  $('restapRequest').textContent=pretty(JSON.parse(JSON.stringify(req,(_k,v)=>typeof v==='string'&&v.startsWith('data:image/')?`${v.slice(0,65)}… [image shortened for display]`:v)));$('openaiRequest').textContent=pretty(result.openai_request);$('openaiResponse').textContent=pretty(result.openai_response);$('restapResponse').textContent=pretty(result.restap);
  $('latency').textContent=`${result.latency_ms??0} ms`;
- $('choice').textContent=result.error?'Error':result.restap?.action===null?'null · paused':result.restap?.action??'—';$('choice').classList.toggle('error',!!result.error);
+ $('choice').textContent=result.error?'Error':result.restap?.action===null?'null · refused':result.restap?.action??'—';$('choice').classList.toggle('error',!!result.error);
  $('status').textContent=result.error?`RESTAP error: ${result.error}`:`Request ${req.id}`;
  $('actionChips').replaceChildren();for(const action of Array.isArray(req.actions)?req.actions:[]){const el=document.createElement('span');el.className='badge'+(result.restap?.action===action?.id?' chosen':'');el.textContent=action?.id??'(invalid action)';$('actionChips').append(el);}
 }
@@ -139,6 +141,56 @@ $('reset').onclick=()=>{if(busy)return;world=freshWorld();gridEvents=[];$('steps
 $('preset').onchange=loadPreset;$('clearImage').onclick=clearImage;
 $('image').onchange=async()=>{const file=$('image').files[0];if(!file){clearImage();return;}if(file.size>5*1024*1024){clearImage();$('status').textContent='Image exceeds 5 MiB.';return;}setBusy(true);try{upload=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file);});$('imagePreview').src=upload;$('imagePreview').hidden=false;}catch{clearImage();$('status').textContent='Could not read image.';}finally{setBusy(false);}};
 let game=freshBreakout(), breakRunning=false, breakTurn=0, breakEvents=['Game started.'];
+let breakGeneration=0, target=game.paddle.x, targetZone='stay', animation=0, wakeDecision=null;
+let rtStats={completed:0,latency:0,stale:0,discarded:0,elapsed:0}, activeSince=null;
+const consumed=new Set();
+function modeControls(){const realtime=$('breakMode').value==='realtime';$('frames').disabled=busy||realtime;$('breakStep').disabled=busy||realtime;for(const id of ['maxAge','decisionInterval'])$(id).disabled=busy||!realtime;}
+function drawRealtimeStats(){
+ const seconds=(rtStats.elapsed+(activeSince===null?0:performance.now()-activeSince))/1000;
+ $('realtimeStats').textContent=`Target ${targetZone} · ${(seconds?rtStats.completed/seconds:0).toFixed(2)} decisions/s · Average latency ${rtStats.completed?Math.round(rtStats.latency/rtStats.completed):0} ms · Stale ${rtStats.stale} / discarded ${rtStats.discarded} · Running input cost $${totalCost.toFixed(8)}${unknownCosts?' + unknown usage':''}`;
+}
+function stopBreakout(){
+ breakRunning=false;breakGeneration++;cancelAnimationFrame(animation);wakeDecision?.();
+ if(activeSince!==null){rtStats.elapsed+=performance.now()-activeSince;activeSince=null;}
+ $('breakPause').disabled=true;drawRealtimeStats();
+}
+async function runRealtime(){
+ if(busy)return;
+ const limit=Number($('breakTurns').value),maxAgeMs=Number($('maxAge').value),interval=Number($('decisionInterval').value),speed=Number($('gameSpeed').value);
+ if(!Number.isInteger(limit)||limit<1||limit>500||!Number.isFinite(maxAgeMs)||maxAgeMs<1||maxAgeMs>30000||!Number.isFinite(interval)||interval<0||interval>10000)return void($('status').textContent='Choose 1–500 decisions, 1–30000 ms max age, and 0–10000 ms interval.');
+ if(finished(game)||breakTurn>=limit)return void($('status').textContent='Reset the game or increase the decision budget.');
+ breakRunning=true;const generation=++breakGeneration;setBusy(true);activeSince=performance.now();
+ const tick=frameClock();
+ const animate=now=>{
+  if(!breakRunning||generation!==breakGeneration)return;
+  tick(now,speed,()=>{advanceFrame(game,target,breakEvents);if(breakEvents.length>30)breakEvents.splice(0,breakEvents.length-30);});
+  drawBreakout();drawRealtimeStats();
+  if(finished(game)){stopBreakout();return;}
+  animation=requestAnimationFrame(animate);
+ };
+ animation=requestAnimationFrame(animate);
+ try{while(breakRunning&&breakTurn<limit){
+  drawBreakout();const capturedAt=performance.now();
+  const req={id:crypto.randomUUID(),context:{text:`Play continuously running Breakout. Keep the paddle under the predicted intercept of the ball at paddle height, accounting for wall bounces. Coordinates start top left; vy>0 means down. This snapshot will be older when your choice arrives. Physics runs at 60 simulation frames/second times game speed ${speed}. Choose a target zone to move smoothly at up to 4 px/simulation frame and hold until replaced.`,state:{...structuredClone(game),gameSpeed:speed,currentTarget:targetZone,targetX:target},events:[...breakEvents],images:[$('breakout').toDataURL('image/png')]},actions:targetActions(game)};
+  const request={id:req.id,capturedAt,lives:game.lives,actions:req.actions};breakEvents=[];breakTurn++;
+  const card=document.createElement('figure');card.style.cssText='margin:0;flex:0 0 140px;font-size:11px';
+  const img=document.createElement('img');img.src=req.context.images[0];img.alt=`Sent snapshot frame ${game.frame}`;img.style.width='140px';
+  const caption=document.createElement('figcaption');caption.textContent=`Frame ${game.frame} · pending`;card.append(img,caption);$('snapshotStrip').prepend(card);while($('snapshotStrip').children.length>6)$('snapshotStrip').lastChild.remove();
+  fill(req);const result=await decide(req),receivedAt=performance.now();
+  const verdict=acceptDecision({request,result,now:receivedAt,maxAgeMs,active:breakRunning&&generation===breakGeneration,game,seen:consumed});
+  rtStats.completed++;rtStats.latency+=receivedAt-capturedAt;
+  if(verdict.status==='applied'){target=targetFor(game,result.restap.action);targetZone=result.restap.action;}
+  else {rtStats.discarded++;if(verdict.status==='stale')rtStats.stale++;}
+  const note=`Frame ${req.context.state.frame} → ${game.frame}: ${result.restap?.action??result.error??'null'} · ${verdict.status} · latency ${Math.round(receivedAt-capturedAt)} ms · age at ${verdict.status==='applied'?'apply':'discard'} ${Math.round(verdict.ageMs)} ms`;
+  caption.textContent=note;breakNote(note);drawRealtimeStats();
+  // Refusals/errors leave the last target in force. No retries of this snapshot.
+  if(!breakRunning||breakTurn>=limit)break;
+  const delay=Math.max(0,interval-(performance.now()-capturedAt));
+  if(delay)await new Promise(resolve=>{const timer=setTimeout(()=>{wakeDecision=null;resolve();},delay);wakeDecision=()=>{clearTimeout(timer);wakeDecision=null;resolve();};});
+ }
+ }catch(error){breakNote(`Stopped: ${error.message}`);}finally{stopBreakout();setBusy(false);drawBreakout();}
+}
+
 function drawBreakout(){
  const c=$('breakout').getContext('2d');c.fillStyle='#142738';c.fillRect(0,0,480,360);
  game.bricks.forEach((b,i)=>{c.fillStyle=['#57dac3','#ffcc73','#ef859d'][Math.floor(b.y/25)-1]??'#57dac3';c.fillRect(b.x,b.y,b.width,b.height);});
@@ -151,23 +203,25 @@ async function runBreakout(single=false){
  if(busy)return;const k=Number($('frames').value),limit=Number($('breakTurns').value);
  if(!Number.isInteger(k)||k<1||k>120||!Number.isInteger(limit)||limit<1||limit>500){$('status').textContent='Use 1–120 frames and 1–500 turns.';return;}
  if(finished(game)||breakTurn>=limit){$('status').textContent='Reset the game or increase the turn budget to continue.';return;}
- breakRunning=true;setBusy(true);
+ breakRunning=true;const generation=++breakGeneration;setBusy(true);
  try{do{
   drawBreakout();const req={id:crypto.randomUUID(),context:{text:'Play Breakout: clear all bricks, maximize score and preserve lives by keeping the paddle under the ball. Coordinates start at top left; positive vy moves down. Simulation is paused during inference. Each action advances exactly '+k+' frames unless the game ends.',state:structuredClone(game),events:[...breakEvents],images:[$('breakout').toDataURL('image/png')]},actions:actionsFor(game,k)};
-  fill(req);const result=await decide(req);breakTurn++;
+  fill(req);breakTurn++;const result=await decide(req);
+  if(!breakRunning||generation!==breakGeneration){breakNote('Stopped; pending action discarded.');break;}
   const action=result.restap?.action,cost=inputCost(result.openai_response);
   breakNote(`Turn ${breakTurn}: ${result.error??String(action)} · ${result.latency_ms} ms · input ${cost===null?'unknown':'$'+cost.toFixed(8)}`);
   if(result.error||action===null){breakNote('Paused; no frames advanced.');break;}
   if(result.restap?.id!==req.id||!req.actions.some(a=>a.id===action)){breakNote('Invalid response; no frames advanced.');break;}
   breakEvents=[];
-  for(let f=0;f<k&&!finished(game);f++){await new Promise(requestAnimationFrame);advanceFrame(game,action,breakEvents);drawBreakout();}
-  if(!breakEvents.length)breakEvents.push(`Advanced ${k} frames; no collisions.`);
+  const tick=frameClock();let frames=0;
+  while(frames<k&&breakRunning&&!finished(game)){const now=await new Promise(requestAnimationFrame);if(!breakRunning)break;tick(now,Number($('gameSpeed').value),()=>{if(frames<k&&!finished(game)){advanceFrame(game,action,breakEvents);frames++;}});drawBreakout();}
+  if(!breakEvents.length)breakEvents.push(`Advanced ${frames} frames; no collisions.`);
   breakNote(breakEvents.join(' '));
  }while(!single&&breakRunning&&!finished(game)&&breakTurn<limit);
  }catch{breakNote('Paused after an unexpected error.');}finally{breakRunning=false;setBusy(false);drawBreakout();}
 }
-$('breakPlay').onclick=()=>runBreakout();$('breakStep').onclick=()=>runBreakout(true);
-$('breakPause').onclick=()=>{breakRunning=false;$('breakPause').disabled=true;$('status').textContent='Pausing after the current decision and frame block.';};
-$('breakReset').onclick=()=>{if(busy)return;game=freshBreakout();breakTurn=0;breakEvents=['Game started.'];$('breakLog').replaceChildren();drawBreakout();};
-drawBreakout();draw();loadPreset();
+$('breakPlay').onclick=()=> $('breakMode').value==='realtime'?runRealtime():runBreakout();$('breakMode').onchange=()=>{target=game.paddle.x;targetZone='stay';modeControls();drawRealtimeStats();};$('breakStep').onclick=()=>runBreakout(true);
+$('breakPause').onclick=()=>{stopBreakout();$('status').textContent='Stopped; pending replies will be discarded.';};
+$('breakReset').onclick=()=>{if(busy)return;game=freshBreakout();target=game.paddle.x;targetZone='stay';consumed.clear();rtStats={completed:0,latency:0,stale:0,discarded:0,elapsed:0};$('snapshotStrip').replaceChildren();drawRealtimeStats();breakTurn=0;breakEvents=['Game started.'];$('breakLog').replaceChildren();drawBreakout();};
+modeControls();drawRealtimeStats();drawBreakout();draw();loadPreset();
 </script></body></html>
