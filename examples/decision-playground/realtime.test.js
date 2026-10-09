@@ -20,7 +20,7 @@ function harness() {
  }
  const document={getElementById:id=>{if(!nodes.has(id))nodes.set(id,new Element());return nodes.get(id);},createElement:()=>new Element()};
  const el=document.getElementById;
- for(const [id,value] of Object.entries({breakMode:'realtime',gameSpeed:'1',frameCount:'2',breakTurns:'3',maxAge:'750',decisionInterval:'0',frames:'20',preset:'grid'}))el(id).value=value;
+ for(const [id,value] of Object.entries({breakMode:'realtime',inputMode:'both',gameSpeed:'1',frameCount:'2',breakTurns:'3',maxAge:'750',decisionInterval:'0',frames:'20',preset:'grid'}))el(id).value=value;
  const context=vm.createContext({...physics,document,structuredClone,crypto:{randomUUID:()=>`request-${++next}`},performance:{now:()=>now},setTimeout,clearTimeout,requestAnimationFrame:cb=>{const id=++next;raf.set(id,cb);return id;},cancelAnimationFrame:id=>raf.delete(id),fetch:(_url,options)=>new Promise(resolve=>pending.push({req:JSON.parse(options.body),resolve}))});
  const script=readFileSync(new URL('./index.html',import.meta.url),'utf8').split('<script type="module">')[1].split('</script>')[0].replace(/^\s*import .*?;\n/,'');
  vm.runInContext(script,context);
@@ -35,7 +35,7 @@ describe('real-time page controller',()=>{
   expect(h.pending).toHaveLength(1);h.advance(0);for(let i=0;i<10;i++)h.advance(17);
   expect(h.el('gameStats').textContent).toContain('Frame 10');expect(h.pending).toHaveLength(1);
   expect(h.pending[0].req.context.images).toHaveLength(2);expect(h.pending[0].req.context.text).toContain('Image 2: frame 0 (current)');expect(h.pending[0].req.context.state.ball.vy).toBe(-3);expect(h.pending[0].req.context.state.frame).toBe(0);await h.reply(0);
-  expect(h.pending).toHaveLength(2);expect(h.pending[1].req.context.images[0]).toBe(h.pending[0].req.context.images[1]);expect(h.pending[1].req.context.images[1]).not.toBe(h.pending[1].req.context.images[0]);expect(h.pending[1].req.context.state.frame).toBe(10);expect(h.pending[1].req.context.text).toContain('Image 1: frame 0; Image 2: frame 10 (current)');
+  expect(h.pending).toHaveLength(2);expect(h.pending[1].req.context.images[0]).toBe(h.pending[0].req.context.images[1]);expect(h.pending[1].req.context.images[1]).not.toBe(h.pending[1].req.context.images[0]);expect(h.pending[1].req.context.state.frame).toBe(10);expect(h.pending[1].req.context.text).toContain('Image 1: frame 0 (10 frames before Image 2); Image 2: frame 10 (current)');
   expect(h.el('realtimeStats').textContent).toContain('Target zone-8');
   for(let i=0;i<10;i++)h.advance(17);await h.reply(1);await done;
   expect(h.pending).toHaveLength(2);expect(h.el('breakPlay').disabled).toBe(false);expect(h.el('breakPause').disabled).toBe(true);
@@ -72,5 +72,30 @@ describe('real-time page controller',()=>{
   expect(h.pending[0].req.actions.map(a=>a.id)).toEqual(['left','right','stay']);await h.reply(0,'right');
   for(let i=0;i<45;i++){h.advance(17);await h.flush();}await done;
   expect(h.el('gameStats').textContent).toContain('Frame 20');expect(h.pending).toHaveLength(1);
+ });
+});
+
+describe('input mode isolation and session comparison',()=>{
+ it('sends complete state and objective only, retains results across Reset',async()=>{
+  const h=harness();h.el('inputMode').value='state';h.el('inputMode').onchange();h.el('breakTurns').value='1';
+  expect(h.el('frameCount').disabled).toBe(true);
+  const done=h.el('breakPlay').onclick(),c=h.pending[0].req.context;
+  expect(Object.keys(c).sort()).toEqual(['state','text']);expect(c.state).toMatchObject({width:480,height:360,ball:{x:240,y:270,vx:2.4,vy:-3},paddle:{x:195,width:90},score:0,lives:3,frame:0});expect(c.state.bricks).toHaveLength(24);expect(c.text).not.toMatch(/Image|frame 0/);
+  h.advance(100);await h.reply(0);await done;
+  const row=()=>h.el('modeResults').children[0].children.map(c=>c.textContent);
+  expect(row()).toEqual(['State only · 1x','1','100 ms','$0.00001000','10.00','0.0%','—']);
+  h.el('breakReset').onclick();expect(row()[1]).toBe('1');
+  h.el('inputMode').value='images';const second=h.el('breakPlay').onclick();await h.reply(1);await second;
+  expect(h.el('modeResults').children).toHaveLength(2);expect(row()[1]).toBe('1');
+ });
+ it.each([1,2,3,4])('images-only %i has no hidden state/events and oldest-first snapshots',async count=>{
+  const h=harness();h.el('inputMode').value='images';h.el('frameCount').value=String(count);h.el('breakTurns').value='4';const done=h.el('breakPlay').onclick();
+  h.advance(0);
+  for(let i=0;i<4;i++){
+   const c=h.pending[i].req.context;expect(Object.keys(c).sort()).toEqual(['images','text']);expect(c.images).toHaveLength(count);expect(c.text).not.toMatch(/vx|vy|targetX|ball.x|Coordinates|speed/);
+   const frames=[...c.text.matchAll(/Image \d: frame (\d+)/g)].map(m=>Number(m[1]));expect(frames).toEqual([...frames].sort((a,b)=>a-b));
+   if(i===3&&count===4)expect(new Set(c.images).size).toBe(4);
+   h.advance(100);await h.reply(i);
+  }await done;
  });
 });

@@ -68,9 +68,9 @@ describe('local decision playground', () => {
   });
 });
 
- it('accepts two ordered images and rejects three',()=>{
+ it('accepts four ordered images without state and rejects five',()=>{
  const image='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=';
- const body={id:'two',context:{images:[image,image]},actions:[{id:'a',description:'A'},{id:'b',description:'B'}]};
+ const body={id:'two',context:{images:[image,image,image,image]},actions:[{id:'a',description:'A'},{id:'b',description:'B'}]};
  expect(()=>validate(body)).not.toThrow();
  expect(toOpenAI(body).input[0].content.filter(c=>c.type==='input_image').map(c=>c.image_url)).toEqual(body.context.images);
  body.context.images.push(image);expect(()=>validate(body)).toThrow('too_many_images');

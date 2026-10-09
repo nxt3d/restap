@@ -12,13 +12,14 @@
 <main class="layout">
 <section>
 <div class="card"><div class="eyebrow">HEADLINE DEMO</div><h2>Breakout · snapshot decisions</h2><p class="muted">Real-time keeps playing while decisions arrive. Paused mode freezes for each decision.</p>
-<div class="row"><label for="breakMode">Mode</label><select id="breakMode"><option value="realtime">Real-time</option><option value="paused">Paused</option></select><label for="frameCount">Images</label><select id="frameCount"><option value="2" selected>2 frames</option><option value="1">1 frame</option></select><label for="gameSpeed">Game speed</label><select id="gameSpeed"><option value="0.5">0.5x</option><option value="1" selected>1x</option></select></div>
+<div class="row"><label for="breakMode">Mode</label><select id="breakMode"><option value="realtime">Real-time</option><option value="paused">Paused</option></select><label for="inputMode">INPUT MODE</label><select id="inputMode"><option value="state">State only</option><option value="images">Images only</option><option value="both" selected>State + images</option></select><label for="frameCount">Images</label><select id="frameCount"><option value="2" selected>2 frames</option><option value="1">1 frame</option><option value="3">3 frames</option><option value="4">4 frames</option></select><label for="gameSpeed">Game speed</label><select id="gameSpeed"><option value="0.5">0.5x</option><option value="1" selected>1x</option></select></div>
 <div class="row"><label for="maxAge">Max age (ms)</label><input id="maxAge" type="number" min="1" max="30000" value="750"><label for="decisionInterval">Interval (ms)</label><input id="decisionInterval" type="number" min="0" max="10000" value="0"></div>
 <canvas id="breakout" width="480" height="360" style="max-width:480px" aria-label="Breakout game with ball, paddle and bricks"></canvas>
 <p id="gameStats" aria-live="polite"></p>
 <div class="row"><label for="frames">Frames / decision (K)</label><input id="frames" type="number" min="1" max="120" value="20"><label for="breakTurns">Max decisions</label><input id="breakTurns" type="number" min="1" max="500" value="50"></div>
 <div class="row"><button id="breakPlay" class="primary">Play Breakout</button><button id="breakPause" disabled>Stop</button><button id="breakStep">Step decision</button><button id="breakReset">Reset</button></div>
-<p><small>Real-time: eight target zones + stay; max 4 px/simulation frame. Interval is the minimum time between request starts (0 = immediately after each reply). Stop discards pending replies. Paused mode uses left/right/stay for K frames. Decision budget is total since Reset. Real-time sends previous + current snapshots by default; select 1 frame to compare.</small></p><p id="realtimeStats" aria-live="polite"></p><div id="snapshotStrip" style="display:flex;gap:8px;overflow:auto"></div><ol id="breakLog" style="max-height:220px;overflow:auto"></ol></div>
+<p><small>Real-time: eight target zones + stay; max 4 px/simulation frame. Interval is the minimum time between request starts (0 = immediately after each reply). Stop discards pending replies. Paused mode uses left/right/stay for K frames. Decision budget is total since Reset. Real-time input modes compare full state, images only, or both. Images are recent decision snapshots, oldest first; missing history is padded and labeled. Results below survive Reset for this tab session.</small></p><p id="realtimeStats" aria-live="polite"></p><div id="snapshotStrip" style="display:flex;gap:8px;overflow:auto"></div><ol id="breakLog" style="max-height:220px;overflow:auto"></ol></div>
+<div class="card"><h2>Real-time · session comparison</h2><p><small>Accumulated across runs and resets, grouped by input mode, image count and speed. Tracking = paddle contacts / approaches to paddle height; — means no approaches yet. Input cost uses the supplied $0.10/M token estimate; unknown usage is excluded and counted. Output charges excluded.</small></p><div style="overflow:auto"><table style="width:100%;text-align:left;font-size:13px"><thead><tr><th>Input / speed</th><th>Decisions</th><th>Avg latency</th><th>Input / decision</th><th>Decisions/s</th><th>Stale</th><th>Tracking</th></tr></thead><tbody id="modeResults"></tbody></table></div></div>
 <div class="card"><h2>Auto-play · screenshot → decision → move</h2><p class="muted">Blue player P → green exit X. Avoid the red enemy E and dark walls. North is up; enemy stays still.</p>
 <canvas id="world" width="360" height="360" aria-label="Six by six grid world showing the player, enemy, walls and exit"></canvas>
 <div class="row"><label for="turns" style="margin:0">Max turns</label><input id="turns" type="number" min="1" max="50" value="12"><button id="auto" class="primary">Auto-play</button><button id="stop" disabled>Stop</button><button id="reset">Reset grid</button></div>
@@ -145,17 +146,29 @@ $('preset').onchange=loadPreset;$('clearImage').onclick=clearImage;
 $('image').onchange=async()=>{const file=$('image').files[0];if(!file){clearImage();return;}if(file.size>5*1024*1024){clearImage();$('status').textContent='Image exceeds 5 MiB.';return;}setBusy(true);try{upload=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file);});$('imagePreview').src=upload;$('imagePreview').hidden=false;}catch{clearImage();$('status').textContent='Could not read image.';}finally{setBusy(false);}};
 let game=freshBreakout(), breakRunning=false, breakTurn=0, breakEvents=['Game started.'];
 let breakGeneration=0, target=game.paddle.x, targetZone='stay', animation=0, wakeDecision=null;
-let previousSnapshot=null, lastFrameCount=null;
+let snapshotsHistory=[], lastFrameCount=null;
+const modeResults=new Map();
+let activeResult=null;
 let rtStats={completed:0,latency:0,stale:0,discarded:0,elapsed:0}, activeSince=null;
 const consumed=new Set();
-function modeControls(){const realtime=$('breakMode').value==='realtime';$('frames').disabled=busy||realtime;$('breakStep').disabled=busy||realtime;for(const id of ['maxAge','decisionInterval','frameCount'])$(id).disabled=busy||!realtime;}
+function modeControls(){const realtime=$('breakMode').value==='realtime';$('frames').disabled=busy||realtime;$('breakStep').disabled=busy||realtime;for(const id of ['maxAge','decisionInterval','inputMode'])$(id).disabled=busy||!realtime;$('frameCount').disabled=busy||!realtime||$('inputMode').value==='state';}
+function drawModeResults(){
+ $('modeResults').replaceChildren();
+ for(const row of modeResults.values()){
+  const seconds=(row.elapsed+(row===activeResult&&activeSince!==null?performance.now()-activeSince:0))/1000;
+  const attempts=row.contacts+row.misses;
+  const values=[row.label,row.completed,`${row.completed?Math.round(row.latency/row.completed):0} ms`,row.known?`$${(row.cost/row.known).toFixed(8)}${row.unknown?' + '+row.unknown+' unknown':''}`:`unknown (${row.unknown})`,seconds?(row.completed/seconds).toFixed(2):'0.00',`${row.completed?(100*row.stale/row.completed).toFixed(1):0}%`,attempts?`${(100*row.contacts/attempts).toFixed(1)}% (${row.contacts}/${attempts})`:'—'];
+  const tr=document.createElement('tr');for(const value of values){const td=document.createElement('td');td.textContent=String(value);td.style.padding='6px';tr.append(td);}$('modeResults').append(tr);
+ }
+}
 function drawRealtimeStats(){
+ drawModeResults();
  const seconds=(rtStats.elapsed+(activeSince===null?0:performance.now()-activeSince))/1000;
  $('realtimeStats').textContent=`Last decision ${lastFrameCount??"—"} frame(s) · Target ${targetZone} · ${(seconds?rtStats.completed/seconds:0).toFixed(2)} decisions/s · Average latency ${rtStats.completed?Math.round(rtStats.latency/rtStats.completed):0} ms · Stale ${rtStats.stale} / discarded ${rtStats.discarded} · Running input cost $${totalCost.toFixed(8)}${unknownCosts?' + unknown usage':''}`;
 }
 function stopBreakout(){
  breakRunning=false;breakGeneration++;cancelAnimationFrame(animation);wakeDecision?.();
- if(activeSince!==null){rtStats.elapsed+=performance.now()-activeSince;activeSince=null;}
+ if(activeSince!==null){const elapsed=performance.now()-activeSince;rtStats.elapsed+=elapsed;if(activeResult)activeResult.elapsed+=elapsed;activeSince=null;}
  $('breakPause').disabled=true;drawRealtimeStats();
 }
 async function runRealtime(){
@@ -164,11 +177,15 @@ async function runRealtime(){
  if(!Number.isInteger(limit)||limit<1||limit>500||!Number.isFinite(maxAgeMs)||maxAgeMs<1||maxAgeMs>30000||!Number.isFinite(interval)||interval<0||interval>10000)return void($('status').textContent='Choose 1–500 decisions, 1–30000 ms max age, and 0–10000 ms interval.');
  if(finished(game)||breakTurn>=limit)return void($('status').textContent='Reset the game or increase the decision budget.');
  breakRunning=true;const generation=++breakGeneration;setBusy(true);activeSince=performance.now();
- previousSnapshot=null;
+ snapshotsHistory=[];
+ const inputMode=$('inputMode').value, requestedFrames=Number($('frameCount').value), imageCount=inputMode==='state'?0:requestedFrames;
+ const key=`${inputMode}-${imageCount}-${speed}`;
+ if(!modeResults.has(key))modeResults.set(key,{label:`${{state:'State only',images:'Images only',both:'State + images'}[inputMode]}${imageCount?' · '+imageCount+' frames':''} · ${speed}x`,completed:0,latency:0,cost:0,known:0,unknown:0,stale:0,elapsed:0,contacts:0,misses:0});
+ activeResult=modeResults.get(key);
  const tick=frameClock();
  const animate=now=>{
   if(!breakRunning||generation!==breakGeneration)return;
-  tick(now,speed,()=>{advanceFrame(game,target,breakEvents);if(breakEvents.length>30)breakEvents.splice(0,breakEvents.length-30);});
+  tick(now,speed,()=>{advanceFrame(game,target,breakEvents,activeResult);if(breakEvents.length>30)breakEvents.splice(0,breakEvents.length-30);});
   drawBreakout();drawRealtimeStats();
   if(finished(game)){stopBreakout();return;}
   animation=requestAnimationFrame(animate);
@@ -176,23 +193,30 @@ async function runRealtime(){
  animation=requestAnimationFrame(animate);
  try{while(breakRunning&&breakTurn<limit){
   drawBreakout();const capturedAt=performance.now();
-  const frameCount=$('frameCount').value==='1'?1:2;
-  const current={frame:game.frame,lives:game.lives,image:$('breakout').toDataURL('image/png')};
-  const prior=previousSnapshot?.lives===game.lives?previousSnapshot:current;
-  const snapshots=frameCount===2?[prior,current]:[current];
-  const labels=snapshots.map((s,i)=>`Image ${i+1}: frame ${s.frame}${i===snapshots.length-1?' (current)':''}`).join('; ')+(frameCount===2&&prior===current?'. No earlier snapshot in this run/life; Image 1 duplicates the current frame.':'');
-  previousSnapshot=current;
-  const req={id:crypto.randomUUID(),context:{text:`${labels}. Play continuously running Breakout. Keep the paddle under the predicted intercept of the ball at paddle height, accounting for wall bounces. Coordinates start top left; vy>0 means down. This snapshot will be older when your choice arrives. Physics runs at 60 simulation frames/second times game speed ${speed}. Choose a target zone to move smoothly at up to 4 px/simulation frame and hold until replaced.`,state:{...structuredClone(game),gameSpeed:speed,currentTarget:targetZone,targetX:target},events:[...breakEvents],images:snapshots.map(s=>s.image)},actions:targetActions(game)};
+  const frameCount=imageCount;
+  const current={frame:game.frame,lives:game.lives,image:imageCount?$('breakout').toDataURL('image/png'):null};
+  snapshotsHistory=snapshotsHistory.filter(s=>s.lives===game.lives);
+  snapshotsHistory.push(current);snapshotsHistory=snapshotsHistory.slice(-4);
+  const snapshots=imageCount?snapshotsHistory.slice(-imageCount):[];
+  while(snapshots.length<imageCount)snapshots.unshift(snapshots[0]);
+  const labels=snapshots.map((s,i)=>`Image ${i+1}: frame ${s.frame}${i===snapshots.length-1?' (current)':` (${current.frame-s.frame} frames before Image ${snapshots.length})`}`).join('; ')+(new Set(snapshots).size<snapshots.length?'. Missing history in this run/life; repeated frame labels are duplicate snapshots.':'');
+  const context={text:'Play continuously running Breakout. Clear the bricks and preserve lives by keeping the paddle under the predicted ball intercept at paddle height, accounting for wall bounces and observation delay. Choose a target zone and hold until replaced.'};
+  if(inputMode!=='images')context.state={...structuredClone(game),gameSpeed:speed,currentTarget:targetZone,targetX:target};
+  if(imageCount){context.images=snapshots.map(s=>s.image);context.text+=' '+labels;}
+  const req={id:crypto.randomUUID(),context,actions:targetActions(game)};
   const request={id:req.id,capturedAt,lives:game.lives,actions:req.actions};breakEvents=[];breakTurn++;
   const card=document.createElement('figure');card.style.cssText='margin:0;flex:0 0 140px;font-size:11px';
-  const img=document.createElement('img');img.src=req.context.images.at(-1);img.alt=`Sent snapshot frame ${game.frame}`;img.style.width='140px';
+  const img=document.createElement(imageCount?'img':'span');if(imageCount){img.src=req.context.images.at(-1);img.alt=`Sent snapshot frame ${game.frame}`;img.style.width='140px';}else img.textContent='State only';
   const caption=document.createElement('figcaption');caption.textContent=`Frame ${game.frame} · pending`;card.append(img,caption);$('snapshotStrip').prepend(card);while($('snapshotStrip').children.length>6)$('snapshotStrip').lastChild.remove();
   fill(req);const result=await decide(req),receivedAt=performance.now();
   const verdict=acceptDecision({request,result,now:receivedAt,maxAgeMs,active:breakRunning&&generation===breakGeneration,game,seen:consumed});
   lastFrameCount=frameCount;rtStats.completed++;rtStats.latency+=receivedAt-capturedAt;
+  activeResult.completed++;activeResult.latency+=receivedAt-capturedAt;
+  const cost=inputCost(result.openai_response);if(cost===null)activeResult.unknown++;else{activeResult.known++;activeResult.cost+=cost;}
+  if(verdict.status==='stale')activeResult.stale++;
   if(verdict.status==='applied'){target=targetFor(game,result.restap.action);targetZone=result.restap.action;}
   else {rtStats.discarded++;if(verdict.status==='stale')rtStats.stale++;}
-  const note=`${frameCount} frame(s) · Frame ${req.context.state.frame} → ${game.frame}: ${result.restap?.action??result.error??'null'} · ${verdict.status} · latency ${Math.round(receivedAt-capturedAt)} ms · age at ${verdict.status==='applied'?'apply':'discard'} ${Math.round(verdict.ageMs)} ms`;
+  const note=`${frameCount} frame(s) · Frame ${current.frame} → ${game.frame}: ${result.restap?.action??result.error??'null'} · ${verdict.status} · latency ${Math.round(receivedAt-capturedAt)} ms · age at ${verdict.status==='applied'?'apply':'discard'} ${Math.round(verdict.ageMs)} ms`;
   caption.textContent=note;breakNote(note);drawRealtimeStats();
   // Refusals/errors leave the last target in force. No retries of this snapshot.
   if(!breakRunning||breakTurn>=limit)break;
@@ -233,6 +257,7 @@ async function runBreakout(single=false){
 }
 $('breakPlay').onclick=()=> $('breakMode').value==='realtime'?runRealtime():runBreakout();$('breakMode').onchange=()=>{target=game.paddle.x;targetZone='stay';modeControls();drawRealtimeStats();};$('breakStep').onclick=()=>runBreakout(true);
 $('breakPause').onclick=()=>{stopBreakout();$('status').textContent='Stopped; pending replies will be discarded.';};
-$('breakReset').onclick=()=>{if(busy)return;game=freshBreakout();previousSnapshot=null;lastFrameCount=null;target=game.paddle.x;targetZone='stay';consumed.clear();rtStats={completed:0,latency:0,stale:0,discarded:0,elapsed:0};$('snapshotStrip').replaceChildren();drawRealtimeStats();breakTurn=0;breakEvents=['Game started.'];$('breakLog').replaceChildren();drawBreakout();};
+$('breakReset').onclick=()=>{if(busy)return;game=freshBreakout();snapshotsHistory=[];lastFrameCount=null;target=game.paddle.x;targetZone='stay';consumed.clear();rtStats={completed:0,latency:0,stale:0,discarded:0,elapsed:0};$('snapshotStrip').replaceChildren();drawRealtimeStats();breakTurn=0;breakEvents=['Game started.'];$('breakLog').replaceChildren();drawBreakout();};
+$('inputMode').onchange=modeControls;
 modeControls();drawRealtimeStats();drawBreakout();draw();loadPreset();
 </script></body></html>

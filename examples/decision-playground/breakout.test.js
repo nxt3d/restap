@@ -25,3 +25,8 @@ describe('real-time snapshot reliability',()=>{
  });
  it('bounds catch-up after background suspension',()=>{const tick=frameClock();let frames=0;tick(0,1,()=>frames++);tick(10000,1,()=>frames++);expect(frames).toBeLessThanOrEqual(6);});
 });
+
+ it('counts each paddle-height crossing once, including misses before life loss',()=>{
+ const s=freshBreakout(),stats={contacts:0,misses:0};s.ball={x:240,y:322,vx:0,vy:3,radius:6};advanceFrame(s,'stay',[],stats);expect(stats).toEqual({contacts:1,misses:0});
+ s.ball={x:10,y:322,vx:0,vy:3,radius:6};advanceFrame(s,'stay',[],stats);advanceFrame(s,'stay',[],stats);expect(stats).toEqual({contacts:1,misses:1});expect(s.lives).toBe(3);
+ });

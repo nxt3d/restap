@@ -4,7 +4,7 @@ export function actionsFor(s,k){
  const n=4*k;
  return [{id:'left',description:`Move the paddle left ${n} px over the next ${k} frames (4 px/frame, clamped at the left wall).`},{id:'right',description:`Move the paddle right ${n} px over the next ${k} frames (4 px/frame, clamped at the right wall).`},{id:'stay',description:`Hold the paddle in place (0 px movement) for the next ${k} frames.`}];
 }
-export function advanceFrame(s,action,events){
+export function advanceFrame(s,action,events,tracking){
  if(finished(s))return;
  if(typeof action!=='number'&&!['left','right','stay'].includes(action))throw Error('Invalid Breakout action');
  const p=s.paddle,b=s.ball,r=b.radius,oldY=b.y;
@@ -12,6 +12,9 @@ export function advanceFrame(s,action,events){
  b.x+=b.vx;b.y+=b.vy;s.frame++;
  if(b.x<r||b.x>s.width-r){b.x=Math.max(r,Math.min(s.width-r,b.x));b.vx=-b.vx;events.push('Ball bounced off side wall.');}
  if(b.y<r){b.y=r;b.vy=Math.abs(b.vy);events.push('Ball bounced off ceiling.');}
+ if(tracking&&b.vy>0&&oldY+r<=p.y&&b.y+r>=p.y){
+  if(b.x+r>=p.x&&b.x-r<=p.x+p.width)tracking.contacts++;else tracking.misses++;
+ }
  if(b.vy>0&&oldY+r<=p.y&&b.y+r>=p.y&&b.x+r>=p.x&&b.x-r<=p.x+p.width){
   b.y=p.y-r;b.vy=-Math.abs(b.vy);b.vx=3.5*((b.x-(p.x+p.width/2))/(p.width/2));events.push('Ball bounced off paddle.');
  }
