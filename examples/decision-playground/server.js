@@ -7,10 +7,12 @@ const nonblank = value => typeof value === 'string' && value.trim().length > 0;
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const fail = (code, status = 400) => { throw Object.assign(new Error(code), { code, status }); };
 
+export const playgroundLimits = Object.freeze({ max_actions: 255 });
+
 export function validate(body) {
   if (!object(body) || !nonblank(body.id) || !object(body.context) || !Array.isArray(body.actions)) fail('invalid_request');
   if (body.actions.length < 2) fail('too_few_actions');
-  if (body.actions.length > 255) fail('too_many_actions', 422);
+  if (body.actions.length > playgroundLimits.max_actions) fail('too_many_actions', 422);
   const ids = new Set();
   for (const action of body.actions) {
     if (!object(action) || !nonblank(action.id) || action.id === 'null' || !nonblank(action.description)) fail('invalid_request');
@@ -95,6 +97,7 @@ export function createApp({ apiKey = '', fetchImpl = globalThis.fetch, timeoutMs
     if (req.headers.origin && req.headers.origin !== `http://${req.headers.host}`) return send(res, 403, envelope('forbidden'));
     next();
   });
+  app.get('/config', (_req, res) => res.json(playgroundLimits));
   app.get('/', (_req, res) => res.sendFile(PAGE));
   app.get('/breakout.js', (_req, res) => res.sendFile(fileURLToPath(new URL('./breakout.js', import.meta.url))));
   app.post('/decide', (req, res, next) => {

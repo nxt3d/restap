@@ -85,7 +85,7 @@ describe('input mode isolation and session comparison',()=>{
   expect(Object.keys(c).sort()).toEqual(['state','text']);expect(c.state).toMatchObject({width:480,height:360,ball:{x:240,y:323},paddle:{x:195,width:90},score:0,gameOver:false,frame:0});expect(c.state.bricks).toHaveLength(24);expect(c.text).not.toMatch(/Image|frame 0/);
   h.advance(100);await h.reply(0);await done;
   const row=()=>h.el('modeResults').children[0].children.map(c=>c.textContent);
-  expect(row()).toEqual(['realtime · State only · 0 images · 1x · seed 1','0','—','—','—','100 ms','$0.00001000','0.0%','0']);
+  expect(row()).toEqual(['realtime · State only · 0 images · 1x · seed 1 · A–E 00000 · zones 8 (selected 8) · model · age 750 ms · interval 0 ms','0','—','—','—','100 ms','$0.00001000','0.0%','0','0 / 1']);
   h.el('breakReset').onclick();expect(row()[1]).toBe('0');
   h.el('inputMode').value='images';const second=h.el('breakPlay').onclick();await h.reply(1);await second;
   expect(h.el('modeResults').children).toHaveLength(2);expect(row()[1]).toBe('0');
@@ -144,7 +144,7 @@ describe('backend error throttling',()=>{
    expect(h.el('breakPause').disabled).toBe(true);expect(h.el('breakPlay').disabled).toBe(false);
    expect(h.el('realtimeStats').textContent).toContain('0.00 decisions/s · Errors 3 · Average latency 0 ms');
    const row=()=>h.el('modeResults').children[0].children.map(c=>c.textContent);
-   expect(row().slice(1)).toEqual(['0','—','—','—','0 ms','unknown (0)','0%','3']);
+   expect(row().slice(1)).toEqual(['0','—','—','—','0 ms','unknown (0)','0%','3','0 / 0']);
    await vi.advanceTimersByTimeAsync(10000);expect(h.pending).toHaveLength(3);
    const stopped=h.el('gameStats').textContent;h.advance(100);expect(h.el('gameStats').textContent).toBe(stopped);
    h.el('breakReset').onclick();expect(h.el('realtimeStats').textContent).toContain('Errors 0');expect(row()[8]).toBe('3');
@@ -159,7 +159,7 @@ describe('backend error throttling',()=>{
    await vi.advanceTimersByTimeAsync(1);expect(h.pending).toHaveLength(4);
    await h.fail(3);expect(h.el('status').textContent).toContain('Retrying in 1000 ms (2/3)');
    const row=h.el('modeResults').children[0].children.map(c=>c.textContent);
-   expect(row.slice(5)).toEqual(['100 ms','$0.00001000','0.0%','3']);
+   expect(row.slice(5)).toEqual(['100 ms','$0.00001000','0.0%','3','0 / 1']);
    h.el('breakPause').onclick();await done;
    await vi.advanceTimersByTimeAsync(10000);expect(h.pending).toHaveLength(4);
    expect(h.el('status').textContent).toBe('Stopped; pending replies will be discarded.');
@@ -234,4 +234,34 @@ it('synchronizes an edited seed at Play even before a change event is dispatched
  const h=harness();h.el('seed').value='42';h.el('breakTurns').value='1';const done=h.el('breakPlay').onclick();
  expect(h.pending[0].req.context.state.ball).toEqual(physics.freshBreakout(physics.seededRandom(42)).ball);
  expect(h.el('breakLog').lastChild.textContent).toContain('STARTED · seed 42');await h.reply(0);await done;
+});
+
+describe('independent tuning controls',()=>{
+ it.each(['tuneA','tuneB','tuneC','tuneD','tuneE'])('isolates %s and preserves the grouping after reset',async id=>{
+  const h=harness();h.el('inputMode').value='state';h.el(id).checked=true;h.el('zonePrecision').value='16';h.el('breakTurns').value='1';
+  const done=h.el('breakPlay').onclick(),req=h.pending[0].req;
+  expect(req.context.text.includes('start moving NOW')).toBe(id==='tuneA');
+  expect(!!req.context.state.derivedFacts).toBe(id==='tuneB');
+  expect('predictedLandingX' in req.context.state).toBe(id==='tuneE');
+  expect(req.actions.some(a=>a.id==='dash-to-zone-1')).toBe(id==='tuneC');
+  expect(req.actions.some(a=>a.id==='zone-16')).toBe(id==='tuneD');
+  await h.reply(0);await done;const label=h.el('modeResults').children[0].children[0].textContent;
+  h.el(id).checked=false;h.el(id).onchange();const baseline=h.el('breakPlay').onclick();await h.reply(1);await baseline;
+  expect(h.el('modeResults').children).toHaveLength(2);expect(h.el('modeResults').children[0].children[0].textContent).toBe(label);
+ });
+ it('keeps images-only pure with every toggle on and applies dash at 12 px/frame',async()=>{
+  const h=harness();for(const id of ['tuneA','tuneB','tuneC','tuneD','tuneE'])h.el(id).checked=true;
+  h.el('zonePrecision').value='16';h.el('inputMode').value='images';const done=h.el('breakPlay').onclick();
+  expect(Object.keys(h.pending[0].req.context).sort()).toEqual(['images','text']);expect(h.pending[0].req.actions).toHaveLength(33);
+  await h.reply(0,'dash-to-zone-16');h.advance(0);h.advance(17);expect(h.eval('game.paddle.x')).toBe(207);
+  expect(h.el('modeResults').children[0].children[9].textContent).toBe('1 / 1');
+  h.el('breakPause').onclick();await h.reply(1);await done;
+ });
+ it('Perfect makes no API calls, moves while the ball goes up, and stops immediately',async()=>{
+  const h=harness();h.el('controller').value='perfect';h.el('tuneE').checked=true;
+  const done=h.el('breakPlay').onclick();h.advance(0);await h.flush();h.advance(17);await h.flush();
+  expect(h.pending).toHaveLength(0);expect(h.eval('game.paddle.x')).not.toBe(195);
+  h.el('breakPause').onclick();await done;const frame=h.eval('game.frame');h.advance(100);expect(h.eval('game.frame')).toBe(frame);
+  expect(h.el('modeResults').children[0].children[2].textContent).toBe('N/A (no model)');
+ });
 });

@@ -148,3 +148,10 @@ describe('startup API key resolution', () => {
     }
   });
 });
+
+it('publishes a playground action limit that admits 33 choices and enforces its boundary',async()=>{
+ const app=createApp(),config=await request(app).get('/config').set('Host','localhost');
+ expect(config.body.max_actions).toBeGreaterThanOrEqual(33);
+ const body=payload();body.actions=Array.from({length:config.body.max_actions},(_,i)=>({id:`zone-${i}`,description:'Target'}));
+ expect(()=>validate(body)).not.toThrow();body.actions.push({id:'overflow',description:'Extra'});expect(()=>validate(body)).toThrow('too_many_actions');
+});

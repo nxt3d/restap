@@ -40,3 +40,33 @@ it('replays seed sequences, varies launches and preserves normal speed and upwar
  }
  expect(new Set(launches).size).toBe(100);
 });
+
+import {observationState,framesToPaddle,landingPrediction,actionSpeed,perfectAction,breakoutObjective} from './breakout.js';
+describe('tuning physics and observations',()=>{
+ it('counts the top-wall round trip and reflects across multiple side walls',()=>{
+  const s=freshBreakout();Object.assign(s.ball,{x:470,y:100,vx:20,vy:-2});
+  expect(framesToPaddle(s)).toBe(206);
+  // Unfolded x=4590; mirror into [6,474] gives x=102.
+  expect(landingPrediction(s).predictedLandingX).toBe(102);
+  s.ball.vy=2;expect(framesToPaddle(s)).toBe(112);
+  s.ball.vy=0;expect(framesToPaddle(s)).toBeNull();expect(perfectAction(s)).toBe('stay');
+ });
+ it('provides travel facts without the assisted answer and does not mutate snapshots',()=>{
+  const s=freshBreakout(),copy=structuredClone(s),state=observationState(s,{facts:true});
+  expect(state).not.toHaveProperty('predictedLandingX');expect(state.derivedFacts.ballDirection.vertical).toBe('up');
+  expect(state.derivedFacts.zoneTravelFrames[0]).toEqual({zone:1,normal:49,dash:17});
+  expect(s).toEqual(copy);expect(observationState(s)).toEqual(s);
+  const assist=observationState(s,{assist:true});expect(assist).toHaveProperty('predictedLandingX');expect(assist).not.toHaveProperty('derivedFacts');
+ });
+ it.each([8,12,16])('offers %i normal and dash targets, clamps, and holds without overshoot',zones=>{
+  const s=freshBreakout(),o={precision:true,zones,dash:true};expect(targetActions(s,o)).toHaveLength(2*zones+1);
+  const id=`dash-to-zone-${zones}`,target=targetFor(s,id,o);expect(actionSpeed(id)).toBe(12);
+  for(let i=0;i<40;i++){const before=s.paddle.x;advanceFrame(s,target,[],undefined,actionSpeed(id));expect(Math.abs(s.paddle.x-before)).toBeLessThanOrEqual(12);}
+  expect(s.paddle.x).toBe(target);expect(targetFor(s,'stay',o)).toBe(target);
+  expect(()=>targetFor(s,id,{precision:true,zones})).toThrow();
+ });
+ it('defines physical strategy without injecting a current predicted answer into text',()=>{
+  const text=breakoutObjective({instructions:true,dash:true});for(const term of ['150–500','y grows downward','y=330','3.84','12 px/frame','start moving NOW'])expect(text).toContain(term);
+  expect(text).not.toContain('predictedLandingX');
+ });
+});
