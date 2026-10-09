@@ -1,0 +1,69 @@
+import { describe, it, expect, vi } from 'vitest';
+import request from 'supertest';
+import { createApp } from './server.js';
+
+const payload = () => ({ id: 'test-1', context: { text: 'Move safely.' }, actions: [{ id: 'north', description: 'Move north.' }, { id: 'wait', description: 'Wait.' }] });
+const response = answer => ({ ok: true, text: async () => JSON.stringify({ answers: [answer] }) });
+const setup = answer => {
+  const transport = vi.fn(async () => response(answer ?? { type: 'choice', name: 'action', choice: 'north' }));
+  return { transport, app: createApp({ apiKey: 'test-secret-never-real', fetchImpl: transport }) };
+};
+const post = (app, body) => request(app).post('/decide').send(body);
+
+describe('local decision playground', () => {
+  it.each([
+    ['too_few_actions', b => { b.actions.pop(); }],
+    ['invalid_request', b => { b.actions[0].id = 'null'; }],
+    ['invalid_request', b => { b.actions[0].id = null; }],
+    ['invalid_request', b => { b.actions[0].id = '  '; }],
+    ['invalid_request', b => { b.actions[0].description = '\t'; }],
+    ['invalid_request', b => { b.id = ''; }],
+    ['invalid_request', b => { b.context.state = []; }],
+    ['duplicate_action_id', b => { b.actions[1].id = 'north'; }],
+    ['empty_context', b => { b.context = { text: ' ', state: {}, events: [' '] }; }],
+    ['invalid_image', b => { b.context.images = ['data:image/png;base64,YWJj']; }],
+  ])('rejects %s before inference', async (code, mutate) => {
+    const { app, transport } = setup(); const body = payload(); mutate(body);
+    const result = await post(app, body);
+    expect(result.status).toBe(400); expect(result.body.error).toBe(code);
+    expect(result.body.restap).toEqual({ error: code }); expect(transport).not.toHaveBeenCalled();
+  });
+  it('preserves state, events, opaque IDs and actual image parts; truncates display only', async () => {
+    const { app, transport } = setup(); const body = payload();
+    body.context = { state: { health: 0, nested: [null, false] }, events: ['last move blocked'], images: ['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII='] };
+    const result = await post(app, body); expect(result.status).toBe(200);
+    expect(result.headers['cache-control']).toBe('no-store'); expect(result.body.restap).toEqual({ id: body.id, action: 'north' });
+    const sent = JSON.parse(transport.mock.calls[0][1].body);
+    expect(sent.model).toBe('gpt-6-luna'); expect(sent.input[0].content[1].image_url).toBe(body.context.images[0]);
+    expect(sent.input[0].content[0].text).toContain('"nested":[null,false]');
+    expect(sent.questions[0].choices).toEqual(body.actions.map(a => ({ value: a.id, description: a.description })));
+    expect(result.body.openai_request.input[0].content[1].image_url).toContain('truncated');
+    expect(JSON.stringify(result.body)).not.toContain('test-secret-never-real');
+  });
+  it.each([{state:{value:1}}, {events:['event']}, {text:'text'}])('accepts individual context %j', async context => {
+    const { app } = setup(); expect((await post(app, { ...payload(), context })).status).toBe(200);
+  });
+  it('only explicit refusal produces null; wait remains a chosen action', async () => {
+    for (const [answer, action] of [[{ type:'refusal',name:'action' },null],[{type:'choice',name:'action',choice:'wait'},'wait']]) {
+      const { app } = setup(answer); const result = await post(app,payload()); expect(result.status).toBe(200); expect(result.body.restap.action).toBe(action);
+    }
+  });
+  it.each([{type:'choice',name:'action',choice:'unknown'}, {type:'choice',name:'action',choice:false}, {type:'choice',name:'wrong',choice:'north'}, {}])('rejects invalid backend answer %j', async answer => {
+    const { app }=setup(answer); const result=await post(app,payload()); expect(result.status).toBe(502); expect(result.body.error).toBe('invalid_backend_response'); expect(result.body.restap).not.toHaveProperty('action');
+  });
+  it('redacts credentials even from provider errors and maps provider 429 to 503', async () => {
+    const app=createApp({ apiKey:'private-test-key',fetchImpl:async()=>({ok:false,status:429,text:async()=>JSON.stringify({error:'private-test-key'})}) });
+    const result=await post(app,payload());expect(result.status).toBe(503);expect(result.text).not.toContain('private-test-key');expect(result.body.openai_response.error).toBe('[REDACTED]');
+  });
+  it('returns a timeout error instead of null', async () => {
+    const app=createApp({apiKey:'fake',timeoutMs:5,fetchImpl:(_url,{signal})=>new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>reject(new Error('aborted'))))});
+    const result=await post(app,payload());expect(result.status).toBe(504);expect(result.body.error).toBe('decision_timeout');
+  });
+  it('returns errors for malformed JSON and cross-origin calls', async () => {
+    const {app,transport}=setup();
+    const malformed=await request(app).post('/decide').type('json').send('{');expect(malformed.status).toBe(400);expect(malformed.body.error).toBe('invalid_request');
+    expect((await request(app).post('/decide').set('Origin','https://evil.example').send(payload())).status).toBe(403);
+    expect((await request(app).post('/decide').set('Host','evil.example').send(payload())).status).toBe(403);
+    expect(transport).not.toHaveBeenCalled();
+  });
+});
