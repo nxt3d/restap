@@ -103,3 +103,76 @@ sources, errors, and latencies are saved incrementally. Summaries report mean
 bricks/time alive and mean, median, and p90 latency (nearest-rank percentiles
 pooled across attempts, including stale and terminal replies). Interpret
 latency and call-cap differences alongside any apparent gameplay improvement.
+
+## Lane Runner
+
+Open **http://localhost:5180/runner.html**, or use the Lane Runner navigation link.
+Breakout remains available at `/`. The runner is a separate game page sharing the
+same `/decide` adapter, model, score diagnostics and input-cost estimate. No
+protocol or version changes are involved.
+
+- Five lanes, automatic forward motion at 0.5/1/2 world units per 60 Hz simulation
+  frame. Lateral movement is limited to one lane per 10 frames. Default actions
+  target lanes 1–5 and hold; classic actions target one adjacent lane from the
+  nearest lane, or stop lateral motion with stay. Collisions use the nearest lane
+  when a row crosses the runner. Walls kill even during jumps.
+- Seed controls repeat the seed sequence (`seed`, `seed+1`, …) after Reset when
+  Same seeds is checked. Configuration changes reset the episode and shared
+  decision budget; accumulated results remain. Auto-restart waits for a pending
+  reply to settle, pauses two seconds, and respects both budgets.
+- Every generated block has a wall row with a safe coin lane, one ramp, a mandatory
+  full-width trench 24 units after the ramp, and a partial trench with a safe lane.
+  Ramps trigger a jump lasting 30 forward units. At the fastest speed, the 100-unit
+  wall-to-ramp gap gives 50 frames, the 96-unit full-to-partial-trench gap gives 48,
+  and the 140-unit partial-trench-to-next-wall gap gives 70. Crossing all five lanes
+  needs only 40 frames. Holding the ramp lane clears its trench. Thus each block
+  connects to the next with a surviving route; going around all ramps fails.
+  A player's earlier choices can still leave a future hazard unreachable.
+- A adds the rules, visual legend, travel time and mandatory ramp instruction.
+  B adds per-row frames, ground-safe lanes, jump-safe lanes and ramp lanes.
+  E adds the reachability planner's `recommendedLane`. All default off. State
+  includes fractional current lane, target, speed, jump state/remaining duration,
+  and the next eight rows as lane-ordered arrays with frames until contact.
+- State only, images only (1–4 frames), and both are supported. Image snapshots
+  are recent decision captures, oldest first; initial padding is explicitly
+  labeled and cleared between games. Images-only never receives state, derived
+  facts, assist recommendations or events. The canvas uses W/T/R/C labels as
+  well as color and shows the runner and several upcoming rows.
+- Perfect searches upcoming rows, retaining reachable lateral positions, travel
+  time and jump expiry, and recomputes every frame with zero API calls. Perfect
+  at model cadence computes at capture time, waits for the selected latency,
+  then applies through the same stale/ID/action checks. The CLI comparison below
+  replays each live game's actual latency sequence for its paired cadence run.
+  Both baselines use the same lane speed; Perfect every-frame runs continuously
+  even with Paused selected.
+- Real-time continues fixed-step physics during inference; Paused freezes during
+  inference and animates K frames after an accepted action. Stop freezes physics
+  immediately, discards the pending reply and keeps controls locked until it
+  settles. Replies at or beyond max age are stale, IDs are consumed once, and
+  wrong IDs, unoffered choices, old-game and terminal replies cannot steer.
+  Refusals preserve the target. Errors back off 500/1000 ms and stop after three.
+  One request is outstanding at a time; no same-snapshot retries are issued.
+- Confidence, complete probability bars, latency, estimated input cost, exact
+  context/action inspection and decision logs are shown. Model choices are never
+  replaced by the probability bars. The session table groups by seed and full
+  configuration, with per-game distance (rows survived), jumped trenches, avoided
+  wall cells, coins, death cause and simulation time. A missed mandatory ramp is
+  distinguished from other trench deaths. Interrupted games are marked censored,
+  including their lower-bound metrics; exports retain individual records/traces.
+
+The opt-in live runner sanity harness makes three state-only A+B games and three
+images-only (two frames) A games on seeds 1–3. It shares physics and canvas drawing
+with the browser, advances simulation through measured adapter latency, and uses
+65 calls per game (390 maximum), no parallel requests, a zero start interval,
+750 ms max age and two seconds between games. Calls stop at death or the call/time
+cap with no held-action tail. Perfect runs are free and capped at 60 simulated
+seconds. Images are rendered by optional `@napi-rs/canvas`; install it in a scratch
+folder outside the repo and pass its entrypoint. No added runtime dependencies
+are needed for the browser. Set `OPENAI_API_KEY` explicitly at runtime; imports
+and ordinary mocked tests do not read credentials.
+
+```sh
+node examples/decision-playground/runner-compare.js --live \
+  --canvas-module /absolute/scratch/node_modules/@napi-rs/canvas/index.js \
+  --output /absolute/path/outside/repo/lane-runner-live.json
+```
