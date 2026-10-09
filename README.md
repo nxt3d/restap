@@ -605,7 +605,7 @@ An agent supporting decisions adds this entry to `capabilities`. This example us
   },
   "decision": {
     "image_mime_types": ["image/png"],
-    "max_images": 1,
+    "max_images": 2,
     "max_image_bytes": 5242880,
     "max_request_bytes": 8388608,
     "max_actions": 32
@@ -648,7 +648,7 @@ The entire `decision` object and each of its five fields are OPTIONAL, independe
 
 Published values MUST be accurate and enforced consistently with backend support. Unpublished limits may still apply: agents MUST reject over-limit requests with 413 or 422. A no-image agent can explicitly publish `image_mime_types: []`, `max_images: 0`, and `max_image_bytes: 0`; none is mandatory.
 
-The reference deployment values shown above are PNG, 1 image, 5242880 decoded bytes per image, 8388608 encoded body bytes, and 32 actions. They are deployment defaults, not protocol constants or provider limits. Text, state, and events need no support flags because every decision agent MUST accept them.
+The reference deployment values shown above are PNG, 2 images, 5242880 decoded bytes per image, 8388608 encoded body bytes, and 32 actions. They are deployment defaults, not protocol constants or provider limits. Text, state, and events need no support flags because every decision agent MUST accept them.
 
 ### **Top-Level `protocols` Field**
 

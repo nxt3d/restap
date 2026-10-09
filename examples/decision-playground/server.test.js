@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import request from 'supertest';
-import { createApp } from './server.js';
+import { createApp, validate, toOpenAI } from './server.js';
 
 const payload = () => ({ id: 'test-1', context: { text: 'Move safely.' }, actions: [{ id: 'north', description: 'Move north.' }, { id: 'wait', description: 'Wait.' }] });
 const response = answer => ({ ok: true, text: async () => JSON.stringify({ answers: [answer] }) });
@@ -67,3 +67,11 @@ describe('local decision playground', () => {
     expect(transport).not.toHaveBeenCalled();
   });
 });
+
+ it('accepts two ordered images and rejects three',()=>{
+ const image='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=';
+ const body={id:'two',context:{images:[image,image]},actions:[{id:'a',description:'A'},{id:'b',description:'B'}]};
+ expect(()=>validate(body)).not.toThrow();
+ expect(toOpenAI(body).input[0].content.filter(c=>c.type==='input_image').map(c=>c.image_url)).toEqual(body.context.images);
+ body.context.images.push(image);expect(()=>validate(body)).toThrow('too_many_images');
+ });

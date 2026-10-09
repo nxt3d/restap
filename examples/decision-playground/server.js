@@ -21,7 +21,7 @@ export function validate(body) {
   if (c.state !== undefined && !object(c.state)) fail('invalid_request');
   if (c.events !== undefined && (!Array.isArray(c.events) || c.events.some(x => typeof x !== 'string'))) fail('invalid_request');
   if (c.images !== undefined && (!Array.isArray(c.images) || c.images.some(x => typeof x !== 'string'))) fail('invalid_request');
-  if ((c.images?.length ?? 0) > 1) fail('too_many_images', 422);
+  if ((c.images?.length ?? 0) > 2) fail('too_many_images', 422);
   for (const image of c.images ?? []) {
     const match = /^data:(image\/[\w.+-]+);base64,([A-Za-z0-9+/]+={0,2})$/.exec(image);
     if (!match) fail('invalid_image');
