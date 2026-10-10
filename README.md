@@ -132,7 +132,7 @@ Only `POST /talk` may stream its response (optional, via SSE). `/news` never tri
 
 `POST {base}/decision` asks an agent to choose from complete actions supplied by the caller. The agent selects; the caller executes. Discover `decision` in `/.well-known/restap.json` before calling it.
 
-Send `Content-Type: application/json` with an uncompressed body. Responses are complete JSON; `/decision` does not support SSE. An absent `Accept`, `*/*`, or an Accept value permitting JSON is valid. An Accept value excluding JSON returns 406. All decision responses, including errors, MUST set `Cache-Control: no-store`.
+Send `Content-Type: application/json` with an uncompressed body. `/decision` always responds with complete JSON and does not stream. Requests without an `Accept` header, or whose `Accept` allows JSON (including `*/*`), are fine. If `Accept` excludes JSON (for example, streaming only), the agent returns 406. All decision responses, including errors, MUST set `Cache-Control: no-store`.
 
 ### **Request**
 
