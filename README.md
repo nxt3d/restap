@@ -183,7 +183,13 @@ IDs are opaque, so do not trim or normalize them. The request ID is only for cor
 
 ### **Actions**
 
-* Each action is a complete choice with an ID and a description, for example `north` with "Move one tile north."
+* Each action has two parts. The `id` is a short name the caller makes up, and the `description` says exactly what happens if the agent picks it.
+
+  ```json
+  {"id": "north", "description": "Move one tile north."}
+  ```
+
+* Every action is complete. The caller decides all the details in advance, such as how far, which target, or what text, so the agent never fills anything in. It only picks.
 * Only the ID and the description go to the agent. What the action actually does, such as a game command, a tool call or an API request, stays with the caller. So do tool names, credentials, code and permissions.
 * There is no shared list of action names. Each caller makes up its own IDs, and the agent never adds details to an action. It only picks one.
 
