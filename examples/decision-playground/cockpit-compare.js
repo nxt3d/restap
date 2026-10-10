@@ -11,6 +11,6 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const {createCanvas}=await import(pathToFileURL(arg('--canvas-module')).href),canvas=createCanvas(WIDTH,HEIGHT),ctx=canvas.getContext('2d');
  const render=g=>{drawCockpit(ctx,g);return canvas.toDataURL('image/png');};
  const server=createApp({apiKey:process.env.OPENAI_API_KEY}).listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
- const endpoint=`http://127.0.0.1:${server.address().port}/decide`;
+ const endpoint=`http://127.0.0.1:${server.address().port}/decision`;
  try{const result=await compareCockpit({render,decide:async body=>(await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json(),onRow:data=>{writeFileSync(arg('--output'),JSON.stringify(data,null,2));console.log(`Completed ${data.calls} calls`);}});writeFileSync(arg('--output'),JSON.stringify(result,null,2));console.log(JSON.stringify(result.summary));}finally{await new Promise(r=>server.close(r));}
 }

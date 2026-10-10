@@ -2,12 +2,12 @@ import express from 'express';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const PAGE = fileURLToPath(new URL('./index.html', import.meta.url));
+const PAGE = fileURLToPath(new URL('./cockpit.html', import.meta.url));
 const nonblank = value => typeof value === 'string' && value.trim().length > 0;
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const fail = (code, status = 400) => { throw Object.assign(new Error(code), { code, status }); };
 
-export const playgroundLimits = Object.freeze({ max_actions: 255 });
+export const playgroundLimits = Object.freeze({ max_actions: 6, max_images: 1, image_mime_types: Object.freeze(['image/png', 'image/jpeg', 'image/webp']) });
 
 export function validate(body) {
   if (!object(body) || !nonblank(body.id) || !object(body.context) || !Array.isArray(body.actions)) fail('invalid_request');
@@ -24,11 +24,11 @@ export function validate(body) {
   if (c.state !== undefined && !object(c.state)) fail('invalid_request');
   if (c.events !== undefined && (!Array.isArray(c.events) || c.events.some(x => typeof x !== 'string'))) fail('invalid_request');
   if (c.images !== undefined && (!Array.isArray(c.images) || c.images.some(x => typeof x !== 'string'))) fail('invalid_request');
-  if ((c.images?.length ?? 0) > 4) fail('too_many_images', 422);
+  if ((c.images?.length ?? 0) > playgroundLimits.max_images) fail('too_many_images', 422);
   for (const image of c.images ?? []) {
     const match = /^data:(image\/[\w.+-]+);base64,([A-Za-z0-9+/]+={0,2})$/.exec(image);
     if (!match) fail('invalid_image');
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(match[1])) fail('unsupported_image_format', 422);
+    if (!playgroundLimits.image_mime_types.includes(match[1])) fail('unsupported_image_format', 422);
     const bytes = Buffer.from(match[2], 'base64');
     if (bytes.toString('base64') !== match[2]) fail('invalid_image');
     if (bytes.length > 5 * 1024 * 1024) fail('image_too_large', 413);
@@ -97,11 +97,18 @@ export function createApp({ apiKey = '', fetchImpl = globalThis.fetch, timeoutMs
     if (req.headers.origin && req.headers.origin !== `http://${req.headers.host}`) return send(res, 403, envelope('forbidden'));
     next();
   });
-  app.get('/config', (_req, res) => res.json(playgroundLimits));
+  app.get('/.well-known/restap.json', (_req, res) => res.json({
+    name: 'Cockpit Trainer',
+    capabilities: [{
+      id: 'decision', title: 'Choose an action', method: 'POST', endpoint: '/decision',
+      description: 'Choose one supplied action; returns a RESTAP result wrapped with playground diagnostics.',
+      content_types: ['application/json'], output_formats: ['application/json'],
+      decision: { ...playgroundLimits, confidence: true, probabilities: true },
+    }],
+  }));
   app.get('/', (_req, res) => res.sendFile(PAGE));
-  for (const file of ['cockpit.html', 'cockpit.js', 'cockpit-render.js', 'cockpit-ui.js', 'runner.html', 'runner.js', 'runner-ui.js', 'turn-runner.html', 'turn-runner.js', 'turn-render.js', 'turn-ui.js']) app.get('/'+file, (_req, res) => res.sendFile(fileURLToPath(new URL('./'+file, import.meta.url))));
-  app.get('/breakout.js', (_req, res) => res.sendFile(fileURLToPath(new URL('./breakout.js', import.meta.url))));
-  app.post('/decide', (req, res, next) => {
+  for (const file of ['cockpit.html', 'cockpit.js', 'cockpit-render.js', 'cockpit-ui.js']) app.get('/'+file, (_req, res) => res.sendFile(fileURLToPath(new URL('./'+file, import.meta.url))));
+  app.post('/decision', (req, res, next) => {
     if (!req.is('application/json')) return send(res, 415, envelope('unsupported_media_type'));
     if (req.headers['content-encoding'] && req.headers['content-encoding'] !== 'identity') return send(res, 415, envelope('unsupported_content_encoding'));
     if (!req.accepts('json')) return send(res, 406, envelope('not_acceptable'));

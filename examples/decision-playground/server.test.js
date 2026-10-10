@@ -11,7 +11,7 @@ const setup = answer => {
   const transport = vi.fn(async () => response(answer ?? { type: 'choice', name: 'action', choice: 'north' }));
   return { transport, app: createApp({ apiKey: 'test-secret-never-real', fetchImpl: transport }) };
 };
-const post = (app, body) => request(app).post('/decide').send(body);
+const post = (app, body) => request(app).post('/decision').send(body);
 
 describe('local decision playground', () => {
   it.each([
@@ -64,16 +64,16 @@ describe('local decision playground', () => {
   });
   it('returns errors for malformed JSON and cross-origin calls', async () => {
     const {app,transport}=setup();
-    const malformed=await request(app).post('/decide').type('json').send('{');expect(malformed.status).toBe(400);expect(malformed.body.error).toBe('invalid_request');
-    expect((await request(app).post('/decide').set('Origin','https://evil.example').send(payload())).status).toBe(403);
-    expect((await request(app).post('/decide').set('Host','evil.example').send(payload())).status).toBe(403);
+    const malformed=await request(app).post('/decision').type('json').send('{');expect(malformed.status).toBe(400);expect(malformed.body.error).toBe('invalid_request');
+    expect((await request(app).post('/decision').set('Origin','https://evil.example').send(payload())).status).toBe(403);
+    expect((await request(app).post('/decision').set('Host','evil.example').send(payload())).status).toBe(403);
     expect(transport).not.toHaveBeenCalled();
   });
 });
 
- it('accepts four ordered images without state and rejects five',()=>{
+ it('accepts one cockpit image without state and rejects two',()=>{
  const image='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=';
- const body={id:'two',context:{images:[image,image,image,image]},actions:[{id:'a',description:'A'},{id:'b',description:'B'}]};
+ const body={id:'two',context:{images:[image]},actions:[{id:'a',description:'A'},{id:'b',description:'B'}]};
  expect(()=>validate(body)).not.toThrow();
  expect(toOpenAI(body).input[0].content.filter(c=>c.type==='input_image').map(c=>c.image_url)).toEqual(body.context.images);
  body.context.images.push(image);expect(()=>validate(body)).toThrow('too_many_images');
@@ -149,9 +149,18 @@ describe('startup API key resolution', () => {
   });
 });
 
-it('publishes a playground action limit that admits 33 choices and enforces its boundary',async()=>{
- const app=createApp(),config=await request(app).get('/config').set('Host','localhost');
- expect(config.body.max_actions).toBeGreaterThanOrEqual(33);
- const body=payload();body.actions=Array.from({length:config.body.max_actions},(_,i)=>({id:`zone-${i}`,description:'Target'}));
+it('advertises and enforces cockpit limits through discovery',async()=>{
+ const app=createApp(),discovery=await request(app).get('/.well-known/restap.json');
+ expect(discovery.status).toBe(200);
+ const capability=discovery.body.capabilities[0];
+ expect(capability).toMatchObject({id:'decision',method:'POST',endpoint:'/decision',decision:{max_actions:6,max_images:1,image_mime_types:['image/png','image/jpeg','image/webp'],confidence:true,probabilities:true}});
+ const body=payload();body.actions=Array.from({length:capability.decision.max_actions},(_,i)=>({id:`action-${i}`,description:'Action'}));
  expect(()=>validate(body)).not.toThrow();body.actions.push({id:'overflow',description:'Extra'});expect(()=>validate(body)).toThrow('too_many_actions');
+});
+it('serves only the cockpit pages and assets',async()=>{
+ const app=createApp();
+ const home=await request(app).get('/');expect(home.status).toBe(200);expect(home.text).toContain('COCKPIT TRAINER');expect(home.text).toContain('POST /decision');expect(home.text).toContain('href="/.well-known/restap.json"');
+ for(const path of ['/cockpit.html','/cockpit.js','/cockpit-render.js','/cockpit-ui.js'])expect((await request(app).get(path)).status).toBe(200);
+ for(const path of ['/runner.html','/turn-runner.html','/breakout.js','/config'])expect((await request(app).get(path)).status).toBe(404);
+ expect((await request(app).post('/decide').send(payload())).status).toBe(404);
 });

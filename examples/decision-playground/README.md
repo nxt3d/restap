@@ -1,43 +1,37 @@
-# Decision Playground
+# Cockpit Trainer
 
-A local diagnostic preview, ahead of the full `/decision` implementation. Uses the repository's Express dependency and Node's native fetch; no build step or new dependencies.
+A local RESTAP decision playground with 18 fictional light-twin cockpit scenarios. These are simplified recognition exercises, not real flight procedures.
+
+## Run
+
+From the repository root, with Node 18+:
 
 ```sh
-cd /Users/nxt3d/projects/rest-ap/restap-extension-decision
+npm ci
 node examples/decision-playground/server.js
 ```
 
-Open **http://localhost:5180**. Set `PORT` to override 5180. Requires Node 18+ and the repository's installed dependencies (`npm ci` if needed).
+Open **http://localhost:5180/**. Set `PORT` to choose another port. No build step is needed for the playground.
 
-At startup the server uses trimmed `OPENAI_API_KEY` first, then falls back to the trimmed contents of `/Users/nxt3d/projects/idchain-restap/openAI_API_Key.txt`. If neither supplies a key, startup warns and decisions return `decision_backend_unavailable`. The credential stays in server memory, is never logged or returned, and is sent only as the Authorization header to OpenAI. No key is needed for mocked tests. The server binds to loopback, checks Host/Origin, and serves the page, its physics module, `GET /config` and `POST /decide`.
+The server uses trimmed `OPENAI_API_KEY` first, then falls back to `/Users/nxt3d/projects/idchain-restap/openAI_API_Key.txt`. It reads credentials only at startup; mocked tests never read that file. With no key, startup warns and decisions return `decision_backend_unavailable`. The key stays server-side, is sent only to OpenAI, and is redacted from diagnostics if the provider echoes it. The server binds to loopback and checks Host and Origin.
 
-## Try it
+## What it shows
 
-- **Breakout** defaults to **Real-time**, with **Paused** available beside it. Both modes offer 0.5x/1x speed, a total decision budget (1–500 since Reset), Stop and Reset. Stop immediately halts simulation and discards any pending reply; controls remain locked until that one request settles.
-- **Real-time** renders with `requestAnimationFrame` and advances fixed 60 Hz simulation steps at the selected speed, regardless of display refresh rate. It never waits for inference. Catch-up is capped at 100 ms per animation callback after suspension. Eight paddle-center zones plus stay are complete choices; the paddle approaches its clamped target at up to 4 px/simulation frame and holds there. Stay captures the paddle's current position when applied.
-- **INPUT MODE** (both play modes): **State only** sends full game data in `context.state` (ball x/y/vx/vy, paddle position/width, field dimensions, all remaining brick rectangles, score, game ID, terminal flag and frame; real-time also includes speed and target), with only the objective in `context.text` and no images. **Images only** omits state and events entirely; text contains only the objective and image frame labels, with no numeric current game positions. A may add static physics constants. **State + images** sends both. The same fixed action choices apply to every mode.
-- Images defaults to 2 and supports 1–4 recent decision snapshots, oldest first. Frame labels identify their age relative to the current image. Missing history at game start is padded with the earliest available image and explicitly labeled; no previous-game image is reused. One request is outstanding at a time. Interval sets the minimum time between request starts; zero starts the next immediately after the previous completes. No same-snapshot retries.
-- **One miss ends a game:** “Game over: missed the ball” appears on the canvas and in the log. No lives or respawn. Physics stops immediately and an outstanding reply is discarded before any next game starts.
-- **Seeded launches:** every game centers the paddle and launches from its center, just above it, at the normal speed and a seeded angle in 30–150° above horizontal. The visible uint32 Seed is editable. **Same seeds** (default on) replays the identical sequence from game 1 on Reset and configuration changes; unchecked chooses a fresh seed. **New seed** always selects a new sequence. Changing input/play mode, image count, K, speed, any tuning setting, controller, max age or interval resets the game and decision budget to avoid mixing configurations within a game. It retains comparison results and game-end log markers.
-- **Auto-restart** (default off) plays up to the **Games budget** (default 10; includes the current game). The decision budget is shared across all games since Reset; neither budget resets automatically. Stop cancels the series, including when a terminal game's reply is pending. Step never auto-restarts.
-- The session table groups by play mode, input mode, images, paused K, speed, seed set, all seven tuning flags, selected/effective zones, controller, max age and interval. It reports completed games, average decisions survived, average bricks cleared and average simulation seconds alive (frame / 60, excluding paused inference), plus average latency, estimated input cost per known-usage reply, stale percentage and errors. A real-time decision is survived if its valid action is applied while alive; paused mode counts it only after surviving its full K frames. Interrupted games are excluded from survival averages. Latency/cost/stale include discarded end-of-game replies. Unknown usage is counted explicitly. Results and game-end log markers survive Reset; reloading clears them. Grid/manual calls do not enter this table.
-- **Reliability:** max snapshot age defaults to 750 ms and uses monotonic wall time, independent of game speed. Replies at or beyond the deadline are stale. Every ID is consumed at most once, including discarded replies. Wrong IDs, unoffered actions, replies after Stop/game end or from a previous game are rejected. Refusals retain the current target while fresh decisions continue. Errors wait 500 ms, then 1000 ms before a fresh request; three consecutive errors pause auto-play with a backend/key diagnostic. Success resets backoff. Errors are counted separately from decisions in live stats and the comparison table, and excluded from decision latency, throughput and per-decision input cost; the game never silently substitutes an action. Reaching the decision budget stops the run.
-- The six-snapshot strip shows frame at capture/return, choice, image count, apply/discard status, browser round-trip latency and age at apply/discard. Summary shows the last decision’s image count, target, completed decisions per active second, average browser latency, stale/total discarded counts, and the tab's running input cost. Discarded calls still count toward cost and budget. The provider diagnostics separately show server latency.
-- **Paused** retains left/right/stay and K (1–120 frames); simulation freezes during inference, then animates exactly K frames (unless stopped/terminal). Step decision runs one block. Refusal/errors advance no frames.
-- The observation panel shows the exact screenshot sent, including when inspecting history. Input cost uses `usage.input_tokens × $0.10 / 1,000,000`, at Prem's supplied rate. Per-decision estimates and the tab's running input total exclude output charges. Missing usage is explicitly unknown. Resetting a game does not erase accumulated costs.
+Choose Images only, State only, or Both, optionally enable the pilot role, and select a seed and scenario order. **Step** runs one decision; **Play all scenarios** runs up to 21 calls with a configurable result hold. **Pause** stops after the current decision. **New run** restarts the scenarios while retaining session results.
 
-- Choose the **text** preset and press **Decide** for a support-routing choice.
-- Choose **grid** for an editable single decision; optionally upload an image. **Auto-play** supplies the canvas PNG plus fresh state and prior outcomes each turn, executes the returned move and stops on exit, enemy collision, refusal, error, Stop, or the selected turn limit (1–50). The enemy is stationary. Reset starts a new world. Stop discards a pending move, although the provider call may finish.
-- The **refusal / null probe** asks for an unsafe choice without executing it. Refusal is model-dependent, not guaranteed. Only an explicit provider refusal maps to null; no sentinel choice or confidence threshold is added.
-- History holds the last 50 runs in tab memory. Click a run to inspect it. Images are abbreviated in both displayed requests; full data URLs go to the provider. No hidden model reasoning is exposed.
+Each request offers six actions and at most one cockpit screenshot. The simulation waits for inference, then advances five simulated seconds. Instruments animate the outcome, a banner grades the action, and step markers show progress through follow-up checklists. Errors do not advance or grade a scenario: playback stops and controls wait through a 500 ms exponential cooldown, capped at five seconds. A successful decision resets the backoff; there are no automatic retries.
+
+The exchange panel shows **POST /decision**, HTTP status, browser latency, and the RESTAP request and response. History retains each step. Image data is shortened only for display; Copy and Export JSON preserve full payloads. Expand **Backend (OpenAI Decisions)** for provider diagnostics. Confidence and probability bars appear only when the backend supplies valid scores. Results compare accuracy, resolved scenarios, dangerous actions, false alarms, latency, reported cost, confidence, and errors across input modes.
+
+The small **Discovery** link opens `GET /.well-known/restap.json`, advertising the `decision` capability, its endpoint, supported image MIME types, `max_images: 1`, `max_actions: 6`, and optional confidence/probability support.
 
 ## Diagnostic endpoint
 
-`POST /decide` accepts `{id, context: {text, images, state, events}, actions: [{id, description}, ...]}`. Success wraps the RESTAP result:
+`POST /decision` accepts `{id, context: {text, images, state, events}, actions: [{id, description}, ...]}`. It retains a playground-specific wrapper around the RESTAP result:
 
 ```json
 {
-  "restap": {"id": "example", "action": "billing"},
+  "restap": {"id": "example", "action": "monitor", "confidence": 0.9},
   "openai_request": {"model": "gpt-6-luna", "input": [], "questions": []},
   "openai_response": {"answers": []},
   "latency_ms": 155,
@@ -45,215 +39,15 @@ At startup the server uses trimmed `OPENAI_API_KEY` first, then falls back to th
 }
 ```
 
-The provider objects above are abbreviated examples. Actual responses include the sent JSON body (only image URLs shortened) and raw parsed provider response. Any accidental credential echo is redacted. `latency_ms` measures server-side validation, provider request and response processing, excluding browser/network rendering overhead. Errors carry the corresponding HTTP status, a RESTAP `{error: "snake_case_code"}` object, and the same diagnostic fields. Provider HTTP errors retain their response for local inspection and map to 503; invalid answers map to 502; a 30-second deadline maps to 504. Errors never become null decisions.
+Provider objects above are abbreviated examples. The adapter sends one choice question to OpenAI Decisions and accepts only an offered choice or explicit refusal (`action: null`). Valid scores pass through without normalization; missing or invalid scores are omitted. Errors retain the diagnostic wrapper and appropriate HTTP status, never a null decision. Provider failures map to 503, invalid answers to 502, and the 30-second deadline to 504.
 
-Validation includes two to 255 actions, nonblank IDs/descriptions, forbidden literal `"null"` action ID, case-sensitive unique IDs, typed context fields, and meaningful context. Local limits: 8 MiB JSON body, up to four PNG/JPEG/WebP images (playground limit only; protocol unchanged), 5 MiB decoded image. Image validation checks canonical base64 and format signatures; full decoding is left to the provider. This small preview does not implement production discovery, authentication, full image decoding, or stages 2–5.
+Local validation permits two to six actions, one PNG/JPEG/WebP image up to 5 MiB decoded, and an 8 MiB JSON body. It checks IDs, typed and meaningful context, canonical base64, and image signatures; full image decoding is left to the provider. Discovery describes this local diagnostic adapter, whose response wrapper is distinct from a bare RESTAP response.
 
-## Provider format and tests
-
-Verified October 9, 2026 against [OpenAI's Decisions guide](https://developers.openai.com/api/docs/guides/decisions) and [TypeScript API reference](https://developers.openai.com/api/reference/typescript/resources/decisions/methods/create): `POST https://api.openai.com/v1/decisions`, model `gpt-6-luna`, `input` messages with `input_text` / `input_image`, and one named `choice` question with `{value, description}` options. Read `answers[0]` and check its name/type; only an offered string choice or explicit refusal is accepted.
+## Verify
 
 ```sh
 npm run test:run
+npm run build
 ```
 
-All ordinary tests inject a mocked transport and never read the key file or call OpenAI. To opt into a live test, start the server with a key and use Decide or Auto-play.
-
-Optional backend `confidence` and complete `probabilities` are preserved in the RESTAP response and displayed as confidence plus probability bars in the result, run history, and real-time snapshot strip. Missing or invalid scores and partial distributions are omitted; refusal has neither field. The adapter never selects or replaces an action from scores. The optional Breakout G caller policy uses probabilities to select its own paddle target, while displaying the unchanged model decision. Mapping follows the [official Decisions API reference](https://developers.openai.com/api/reference/resources/decisions/methods/create): `confidence` and `probabilities: [{value, probability}]`.
-
-## Independent Breakout tuning
-
-All seven checkboxes default **off** and are retained in each comparison group.
-Changing one resets the seeded episode, retaining prior groups in tab memory.
-
-- **A — Instructions:** explains downward-positive y, paddle y=330, radius/contact height, normal/dash paddle speed, launch ball speed and changing velocity, wall bounces, 150–500 ms expected decision latency, and early upward-ball pre-positioning. Paused instructions accurately state that inference freezes simulation.
-- **B — Derived facts:** state adds ball directions, fractional estimated frames to paddle contact (via the top wall when rising), and normal/dash travel frames to every clamped zone target. No landing x or recommended action is added. The wall-only estimate ignores future brick collisions and is null for stationary vertical motion or a downward ball that already passed contact height.
-- **C — Dash:** adds `dash-to-zone-k` at 12 px/frame alongside normal 4 px/frame zones and stay. Both approach a target without overshoot and hold until replaced. The model chooses urgency. The table counts dash selections / valid offered selections, including late discarded selections. Perfect has no model selections.
-- **D — Precision:** an independent on/off checkbox and 8/12/16 selector. Off always means eight zones. C+D16 offers 33 actions. Playground `GET /config` publishes `max_actions: 255` (the already-enforced capacity); this exceeds 33 without changing protocol limits or defaults.
-- **E — Assist baseline:** state additionally includes `predictedLandingX`, numeric `predictedLandingZone` (1-based), and an explicit assist label. Prediction unfolds the flight then mirrors x through both walls; brick collisions may invalidate it. Neither B nor E adds state, events, or inferred coordinates to images-only requests.
-
-**Perfect controller** bypasses all API calls and recomputes the predicted zone each physics frame. It uses the same 4 px/frame paddle limit, or 12 with C enabled, and D's effective zone count. It operates continuously even if Paused is selected; K/model decision budgets do not apply. Stop, game budget and auto-restart still apply. It reports N/A for model decisions and $0 API cost. This is an ideal-information baseline, not proof that every episode is winnable. Its wall-only projection and zone discretization are still approximations.
-
-- **F — Safe-position defense:** adds `center` (normal speed) and, with C, `dash-center` (12 px/frame), returning to the field center and holding. The objective explains defensive waiting near center or the middle of the plausible landing range while the ball travels away, then committing to the predicted landing zone on descent. F replaces A's competing upward-flight strategy when both are on.
-- **G — Probability-weighted safest target:** caller policy only, with no protocol changes. The spec says `action` is the decision; this demo chooses its own target from the probability-weighted median of nominal zone centers, minimizing expected absolute travel under those weights. Normal/dash versions contribute to the same position; `stay` maps to the current paddle center at application time and `center`/`dash-center` to the field center. Non-positional/unoffered actions are ignored. An exactly-half tie uses the lower median; the resulting paddle position is clamped at walls. Missing probabilities or zero usable mass falls back to the chosen action. The model action still determines normal/dash speed. The screen and log show both the model action and G's applied target, including fallback status in the log. Stale, refused or invalid decisions do not apply either policy. This distribution over actions is a caller interpretation of landing uncertainty, not a calibrated landing forecast.
-
-Paused mode keeps left/right/stay when C, D, F and G are off; any of these enables target-zone actions held for the next K frames. B and E are still independent of this action selection.
-
-## Bounded seeded live smoke comparison
-
-`compare.js --live --output /absolute/path/outside/repo/results.json` requires
-`OPENAI_API_KEY` explicitly set in the environment. Importing it and ordinary
-mocked tests never load credentials. It exercises the local adapter against
-OpenAI with five games per configuration, one on each seed 1–5: baseline, F, G,
-F+G, F+G+E (assist), and F+G+C (dash). All other toggles are off.
-
-The harness uses state only, 1x physics, a zero request-start interval and a
-750 ms stale threshold. Games and calls run sequentially, sleeping 2000 ms
-between games; configuration order rotates by seed. Each game has the same
-13-call cap (390 maximum live attempts, below the 400-call budget). No retries
-or extra live reference runs consume additional calls.
-
-Shared 60 Hz physics advances through measured adapter round-trip latency.
-This is a live-provider simulation test, not a browser rendering benchmark.
-Episodes stop immediately at the call cap with `budgetLimited` and `censored`
-flags; there is no held-action tail. A 60-second simulation horizon also marks
-survivors censored. Time alive for censored games is an observed lower bound,
-not a completed survival time. Raw per-game model choices, G targets, policy
-sources, errors, and latencies are saved incrementally. Summaries report mean
-bricks/time alive and mean, median, and p90 latency (nearest-rank percentiles
-pooled across attempts, including stale and terminal replies). Interpret
-latency and call-cap differences alongside any apparent gameplay improvement.
-
-## Lane Runner
-
-Open **http://localhost:5180/runner.html**, or use the Lane Runner navigation link.
-Breakout remains available at `/`. The runner is a separate game page sharing the
-same `/decide` adapter, model, score diagnostics and input-cost estimate. No
-protocol or version changes are involved.
-
-- A two-second (120 simulation frame) empty buffer is added before the existing
-  first-row lead-in at every speed. At speed 1, the first wall arrives at frame
-  220 (3.67 seconds), rather than frame 100 (1.67 seconds). Row gaps are unchanged.
-- State rows use `cells: [{lane: 1, object: "WALL"}, ...]`, with explicit lanes
-  1–5. `currentLane` preserves continuous movement; `currentLaneRounded` is the
-  collision lane. The live harness saves capture/return states and death cells.
-- Five lanes, automatic forward motion at 0.5/1/2 world units per 60 Hz simulation
-  frame. Lateral movement is limited to one lane per 10 frames. Default actions
-  target lanes 1–5 and hold; classic actions target one adjacent lane from the
-  nearest lane, or stop lateral motion with stay. Collisions use the nearest lane
-  when a row crosses the runner. Walls kill even during jumps.
-- Seed controls repeat the seed sequence (`seed`, `seed+1`, …) after Reset when
-  Same seeds is checked. Configuration changes reset the episode and shared
-  decision budget; accumulated results remain. Auto-restart waits for a pending
-  reply to settle, pauses two seconds, and respects both budgets.
-- Every generated block has a wall row with a safe coin lane, one ramp, a mandatory
-  full-width trench 24 units after the ramp, and a partial trench with a safe lane.
-  Ramps trigger a jump lasting 30 forward units. At the fastest speed, the 100-unit
-  wall-to-ramp gap gives 50 frames, the 96-unit full-to-partial-trench gap gives 48,
-  and the 140-unit partial-trench-to-next-wall gap gives 70. Crossing all five lanes
-  needs only 40 frames. Holding the ramp lane clears its trench. Thus each block
-  connects to the next with a surviving route; going around all ramps fails.
-  A player's earlier choices can still leave a future hazard unreachable.
-- A adds the rules, visual legend, travel time and mandatory ramp instruction.
-  B adds per-row frames, ground-safe lanes, jump-safe lanes and ramp lanes.
-  E adds the reachability planner's `recommendedLane`. All default off. State
-  includes fractional current lane, target, speed, jump state/remaining duration,
-  and the next eight rows as lane-ordered arrays with frames until contact.
-- State only, images only (1–4 frames), and both are supported. Image snapshots
-  are recent decision captures, oldest first; initial padding is explicitly
-  labeled and cleared between games. Images-only never receives state, derived
-  facts, assist recommendations or events. The canvas uses W/T/R/C labels as
-  well as color and shows the runner and several upcoming rows.
-- Perfect searches upcoming rows, retaining reachable lateral positions, travel
-  time and jump expiry, and recomputes every frame with zero API calls. Perfect
-  at model cadence computes at capture time, waits for the selected latency,
-  then applies through the same stale/ID/action checks. The CLI comparison below
-  replays each live game's actual latency sequence for its paired cadence run.
-  Both baselines use the same lane speed; Perfect every-frame runs continuously
-  even with Paused selected.
-- Real-time continues fixed-step physics during inference; Paused freezes during
-  inference and animates K frames after an accepted action. Stop freezes physics
-  immediately, discards the pending reply and keeps controls locked until it
-  settles. Replies at or beyond max age are stale, IDs are consumed once, and
-  wrong IDs, unoffered choices, old-game and terminal replies cannot steer.
-  Refusals preserve the target. Errors back off 500/1000 ms and stop after three.
-  One request is outstanding at a time; no same-snapshot retries are issued.
-- Confidence, complete probability bars, latency, estimated input cost, exact
-  context/action inspection and decision logs are shown. Model choices are never
-  replaced by the probability bars. The session table groups by seed and full
-  configuration, with per-game distance (rows survived), jumped trenches, avoided
-  wall cells, coins, death cause and simulation time. A missed mandatory ramp is
-  distinguished from other trench deaths. Interrupted games are marked censored,
-  including their lower-bound metrics; exports retain individual records/traces.
-
-The opt-in live runner sanity harness makes three state-only A+B games and three
-images-only (two frames) A games on seeds 1–3. It shares physics and canvas drawing
-with the browser, advances simulation through measured adapter latency, and uses
-65 calls per game (390 maximum), no parallel requests, a zero start interval,
-750 ms max age and two seconds between games. Calls stop at death or the call/time
-cap with no held-action tail. Perfect runs are free and capped at 60 simulated
-seconds. Images are rendered by optional `@napi-rs/canvas`; install it in a scratch
-folder outside the repo and pass its entrypoint. No added runtime dependencies
-are needed for the browser. Set `OPENAI_API_KEY` explicitly at runtime; imports
-and ordinary mocked tests do not read credentials.
-
-```sh
-node examples/decision-playground/runner-compare.js --live \
-  --canvas-module /absolute/scratch/node_modules/@napi-rs/canvas/index.js \
-  --output /absolute/path/outside/repo/lane-runner-live.json
-```
-
-## Turn-based Lane Runner
-
-Open `/turn-runner.html` from either game. Breakout and the real-time runner
-remain available. The new game pauses simulation for one `/decide` request per
-row, then animates the chosen lane and forward step (350 ms by default). Animation
-speed does not affect rules or decisions. Play continues until death or the turn
-limit; Step advances one row. Pause aborts a waiting request, or lets an already
-accepted move finish. Errors/refusals pause without inventing a move.
-
-All five `Move to lane k for the next row` actions are always offered. Any lane
-change is legal. Walls kill even during a jump; trenches kill on the ground.
-Entering a ramp while grounded arms a jump over exactly the next row, in any
-lane. An airborne runner cannot activate another ramp. Coins are optional and
-collected in the chosen cell. `missed ramp` means an unarmed jump into a
-full-width trench; other trench deaths are `trench`. Fatal rows are excluded
-from rows survived. Turn-limit results are censored (alive), not deaths.
-
-Each seeded 180-row course contains single-gap walls, ramp/full-trench pairs,
-partial trenches, and tempting coins beside required ramps. Reset with
-“Replay the same seed” checked repeats the course. New seed changes it.
-The perfect planner uses dynamic programming over the course, maximizing
-survival then coins, without an API. Generated-course solvability is tested
-for 100 seeds through all 180 rows.
-
-State observations contain current lane, `jumpingNextRow`, and six upcoming
-rows as `{row: 1..6, cells: [{lane: 1..5, object: ...}]}`. Image observations
-are the actual visible canvas, including the jump-ready badge and HUD.
-One frame is the default; two frames means previous/current decision views
-(oldest first), with only the current frame available on the first turn.
-Images-only omits structured state entirely. Toggle A adds the rule text;
-the objective, lane numbering and unrestricted movement remain in every mode.
-No safe-move filtering or planner recommendation is passed to the model.
-
-The opt-in comparison uses the same canvas renderer, seeds 1–5, 60 turns per
-game, state-only + A and images-only + A, one frame, one-second pauses between
-calls and two seconds between games, at most 600 calls, and no retries. API
-errors/refusals are reported as censored stops. It also runs a zero-API planner
-baseline on each seed. Install an optional `@napi-rs/canvas` outside the repo and
-provide its absolute entry point:
-
-```sh
-OPENAI_API_KEY=... node examples/decision-playground/turn-compare.js --live \
-  --canvas-module /absolute/path/to/@napi-rs/canvas/index.js \
-  --output /absolute/path/outside/repo/turn-runner-live.json
-```
-
-The runner reads only `OPENAI_API_KEY` for this opt-in command. Ordinary tests
-remain mocked. The output checkpoints each attempt and includes per-game
-metrics, traces, call counts, latency, and planner results. The UI also exports
-completed/reset game results as JSON.
-
-### Cockpit trainer
-
-Open `/cockpit.html` for a turn-based fictional light-twin instrument-recognition exercise. This is **not real flight instruction or an aircraft checklist**. It adds no protocol contract changes.
-
-The canvas contains the six primary instruments, paired engine gauges, tank quantities, electrical and vacuum readings, fuel pressures, cabin altitude, flaps, gear lights, and annunciators. Sensory observations and trends are printed on the panel so image-only and state-only inputs receive the same evidence. Scenario names, grading, and explanations appear only after the response and never enter the canvas or decision context.
-
-There are 15 fault scenarios and three normal/ambiguous controls. Seeded variants change heading, altitude, and tank quantities; action order and optional scenario shuffle are also deterministic. Each checklist takes one or two decisions (21 maximum per full run). Every step offers six unfiltered actions with an explicit correct/acceptable/wrong/dangerous grade. A wrong response ends the scenario with visible deterioration; a correct response advances five simulated seconds and stabilizes the relevant indications. These transitions are illustrative, not flight dynamics.
-
-Select images, state, or both; toggle A for the single-line pilot role; choose Step or Play all scenarios. Pause finishes an in-flight decision, then stops. Changing settings starts a new run while retaining prior result rows. Results group by input mode; exported JSON preserves seed, mode, per-step grades, reported confidence/probabilities, latency, and errors. First-action accuracy accepts correct or acceptable responses. `null` is acceptable on control panels and wrong on faults. Confidence summaries include all scored steps and omit missing confidence. Cost remains unavailable when no provider `usage.cost_usd` is supplied. No token-price estimate is invented.
-
-The opt-in evaluation uses the same renderer and adapter as the page. Provide a locally installed `@napi-rs/canvas` module path; no canvas dependency is added to the server:
-
-```sh
-OPENAI_API_KEY="$OPENAI_API_KEY" node examples/decision-playground/cockpit-compare.js \
-  --live --output /absolute/path/outside/repo/cockpit-results.json \
-  --canvas-module /absolute/path/to/@napi-rs/canvas/index.js
-```
-
-The runner evaluates all 18 scenarios once in each of the three modes, seed 42, role on, two seconds between requests, no retries, at most 63 calls and a hard 399-call ceiling. It saves each response immediately. Errors remain separate from scored accuracy; consult the error count before interpreting results. The narrow fixed scenario bank is a recognition benchmark, not evidence of operational aviation competence.
-
-The cockpit trainer shows each RESTAP `/decision` exchange under the instruments: the local `POST /decide` status and elapsed time, request and response JSON, and a collapsed Backend (OpenAI Decisions) section. Image data URLs are shortened for display; Copy request and Copy response retain the full JSON. The history selector keeps earlier steps across runs for the current page session, and Export JSON includes those exchanges.
-
-Correct and acceptable choices display a green STEP PASSED banner; wrong and dangerous choices display amber FAIL and red DANGER banners with the correct action. Scenario dots track each checklist step, followed by a resolved or failed summary. Play-all holds the banner for 1.5 seconds after the instrument animation by default; the setup control adjusts this from 0.5 to 30 seconds.
+Ordinary tests use mocked transport and need no key. For an opt-in live smoke test, start the server with a key and press **Step** on the home page. The optional `cockpit-compare.js` CLI retains a full comparison runner; it requires explicit `--live`, `OPENAI_API_KEY`, `--canvas-module` pointing to an installed canvas implementation, and `--output` pointing to a result file.
