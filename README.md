@@ -222,8 +222,6 @@ Cache-Control: no-store
 
 Agents providing these fields MUST advertise `"confidence": true` and/or `"probabilities": true` in their capability's `decision` metadata. Absent score metadata means the field is not provided. Values MUST come from the backend. Agents MUST NOT fabricate or estimate them. If the backend supplies probabilities for only some actions, omit `probabilities` rather than inventing missing values. Values SHOULD approximately sum to 1 when the backend provides a full distribution, but an exact sum of 1 is not required. Values are agent- and backend-specific and are not comparable across agents.
 
-These are the only standard success fields. There are no explanations, provider metadata, reasoning traces, batches, callbacks, tool calls, or new session fields.
-
 Only an explicit provider refusal produces `null`. Agents MUST NOT add a hidden abstention choice or boolean sentinel, reserve a choice slot, or turn low confidence, timeouts, or failures into `null`. A selected `wait` is a real action, while `null` selects nothing. The caller applies its fallback policy, such as pausing or obtaining fresh context, without treating null as a selected wait.
 
 Agents MUST validate backend output before returning it, including exact action membership. The two-action minimum is a protocol rule, not a deployment setting. Maximum counts are deployment limits. RESTAP does not impose the reference deployment's 32-action limit on other agents.
