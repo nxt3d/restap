@@ -191,7 +191,7 @@ IDs are opaque, so do not trim or normalize them. The request ID is only for cor
 
 * Every action is complete. The caller decides all the details in advance, such as how far, which target, or what text, so the agent never fills anything in. It only picks.
 * Only the ID and the description go to the agent. What the action actually does, such as a game command, a tool call or an API request, stays with the caller. So do tool names, credentials, code and permissions.
-* There is no shared list of action names. Each caller makes up its own IDs, and the agent never adds details to an action. It only picks one.
+* There is no shared list of action names. Each caller makes up its own IDs.
 
 ### **Response**
 
