@@ -172,13 +172,20 @@ Every decision agent MUST support text, state, and events, individually and toge
 
 IDs are opaque, so do not trim or normalize them. The request ID is only for correlation. It provides no session, authentication, entropy, deduplication, or determinism guarantee. Each request SHOULD contain enough context to stand alone, including relevant earlier outcomes.
 
-### **Images and complete actions**
+### **Images**
 
-Images MUST be inline base64 data URLs, such as `data:image/png;base64,...` (abbreviated here, so send a complete image). Agents MUST NOT fetch image URLs. Image-capable agents MUST support PNG. JPEG and WebP are allowed only when advertised. Check the catalog's image support and limits before sending screenshots.
+* Put each image inside the request as a base64 data URL, such as `data:image/png;base64,iVBORw0KGgo...` (shortened here, so send the full image). Don't send links, because agents MUST NOT download images.
+* An agent that accepts images MUST accept PNG. JPEG and WebP work only if the agent lists them in its discovery file.
+* Before sending screenshots, check the agent's discovery file for the formats it accepts and how many images it allows.
+* The agent MUST check that each image is valid and really is the format it claims to be.
+* The agent MUST pass images to its model as real images, never as text.
+* The agent MUST NOT quietly drop, cut short, or replace anything you send. If it can't use an image, or a limit is exceeded, it returns an error instead.
 
-Agents MUST validate image syntax, base64, and image content, including its claimed MIME type. Pass supported images through the backend's image-input mechanism. Never silently drop, truncate, or replace supplied context with a text approximation. Unsupported images and exceeded limits produce errors.
+### **Actions**
 
-The caller keeps a private mapping from action IDs to controls. For example, `north` maps to moving one tile north, and `wait` maps to advancing one turn without moving. Tool names, credentials, executable code, and execution permissions stay with the caller. There is no global action vocabulary and no generated action arguments.
+* Each action is a complete choice with an ID and a description, for example `north` with "Move one tile north."
+* Only the ID and the description go to the agent. What the action actually does, such as a game command, a tool call or an API request, stays with the caller. So do tool names, credentials, code and permissions.
+* There is no shared list of action names. Each caller makes up its own IDs, and the agent never adds details to an action. It only picks one.
 
 ### **Response**
 
