@@ -16,7 +16,7 @@ RESTAP is a protocol for AI agents to expose their capabilities via standard HTT
 
 * Enable other agents, applications, and humans to interact with AI agents reliably.
 
-* Support optional selection among fully specified actions; the caller executes the choice.
+* Support optional selection among fully specified actions. The caller executes the choice.
 
 * Support optional skill packages that help clients effectively use agent capabilities.
 
@@ -26,7 +26,7 @@ RESTAP is a protocol for AI agents to expose their capabilities via standard HTT
 
 * Replacing existing auth methods. Use whatever works for your use case.
 
-* **Defining tool invocation, long-running task orchestration, async job handling, or agent-to-agent delegation.** These belong to MCP, A2A, or other protocols an agent advertises. RESTAP standardizes discovery, a one-directional `/talk` entrypoint, and a passive `/news` channel. Selecting one caller-supplied, fully specified action is in scope through the optional `/decision` capability. Executing the selected action remains the caller's responsibility; RESTAP does not define tool invocation or execution orchestration. The optional streaming `tool.*` and `artifact` events (see below) are presentational hints for rendering progress, **not** a tool-invocation protocol.
+* **Defining tool invocation, long-running task orchestration, async job handling, or agent-to-agent delegation.** These belong to MCP, A2A, or other protocols an agent advertises. RESTAP standardizes discovery, a one-directional `/talk` entrypoint, and a passive `/news` channel. Selecting one caller-supplied, fully specified action is in scope through the optional `/decision` capability. Executing the selected action remains the caller's responsibility. RESTAP does not define tool invocation or execution orchestration. The optional streaming `tool.*` and `artifact` events (see below) are presentational hints for rendering progress, **not** a tool-invocation protocol.
 
 * **Defining session management.** The optional `session_id` (see **Sessions (optional)**) is just an opaque continuity token. RESTAP does not define session create/delete endpoints, a session-management API, mandatory persistence/TTL, or auth-bound sessions — those would make it stateful orchestration, which is out of scope.
 
@@ -130,7 +130,7 @@ Only `POST /talk` may stream its response (optional, via SSE). `/news` never tri
 
 ## **Decision selection (optional)**
 
-`POST {base}/decision` asks an agent to choose from complete actions supplied by the caller. The agent selects; the caller executes. Discover `decision` in `/.well-known/restap.json` before calling it.
+`POST {base}/decision` asks an agent to choose from complete actions supplied by the caller. The agent selects, and the caller executes. Discover `decision` in `/.well-known/restap.json` before calling it.
 
 Send `Content-Type: application/json` with an uncompressed body. `/decision` always responds with complete JSON and does not stream. Requests without an `Accept` header, or whose `Accept` allows JSON (including `*/*`), are fine. If `Accept` excludes JSON (for example, streaming only), the agent returns 406. All decision responses, including errors, MUST set `Cache-Control: no-store`.
 
@@ -160,25 +160,25 @@ Accept: application/json
 | --- | --- |
 | `id` | Required nonempty string identifying this exact observation and set of choices. |
 | `context` | Required object. At least one of the four fields below must carry content, or the request is rejected with `empty_context`. |
-| `context.text` | Optional string: the objective, rules or a description of the situation. Text that isn't blank is enough on its own, so a text-only request is allowed. |
+| `context.text` | Optional string with the objective, rules or a description of the situation. Text that isn't blank is enough on its own, so a text-only request is allowed. |
 | `context.images` | Optional list of screenshots as inline base64 data URLs. At least one valid image is enough on its own, so an image-only request is allowed. An empty list doesn't count. |
-| `context.state` | Optional JSON object of structured observations (positions, readings, inventory). At least one property is enough on its own, so a state-only request is allowed; `{}` doesn't count. Any nested JSON is passed through unchanged. `state` itself must be an object, not an array or null. |
+| `context.state` | Optional JSON object of structured observations (positions, readings, inventory). At least one property is enough on its own, so a state-only request is allowed. An empty `{}` doesn't count. Any nested JSON is passed through unchanged. `state` itself must be an object, not an array or null. |
 | `context.events` | Optional list of recent events and previous outcomes, as strings. At least one event that isn't blank is enough on its own, so an events-only request is allowed. |
 | `actions` | Required array of at least two complete choices. |
 | `actions[].id` | Required nonblank string, unique within the request by exact, case-sensitive equality. The literal `"null"` is forbidden. |
 | `actions[].description` | Required nonblank string explaining the action's parameters, duration, units, and effects. |
 
-Every decision agent MUST support text, state, and events, individually and together. Only image support is optional. Empty optional fields may accompany another field with content; malformed defined fields MUST still be rejected. Unknown optional properties MUST be ignored and cannot satisfy the content requirement. Agents MUST preserve all defined supplied context. Put application-specific observations in `state`.
+Every decision agent MUST support text, state, and events, individually and together. Only image support is optional. Empty optional fields may accompany another field with content, but malformed defined fields MUST still be rejected. Unknown optional properties MUST be ignored and cannot satisfy the content requirement. Agents MUST preserve all defined supplied context. Put application-specific observations in `state`.
 
-IDs are opaque: do not trim or normalize them. The request ID is only for correlation. It provides no session, authentication, entropy, deduplication, or determinism guarantee. Each request SHOULD contain enough context to stand alone, including relevant earlier outcomes.
+IDs are opaque, so do not trim or normalize them. The request ID is only for correlation. It provides no session, authentication, entropy, deduplication, or determinism guarantee. Each request SHOULD contain enough context to stand alone, including relevant earlier outcomes.
 
 ### **Images and complete actions**
 
-Images MUST be inline base64 data URLs, such as `data:image/png;base64,...` (abbreviated here; send a complete image). Agents MUST NOT fetch image URLs. Image-capable agents MUST support PNG; JPEG and WebP are allowed only when advertised. Check the catalog's image support and limits before sending screenshots.
+Images MUST be inline base64 data URLs, such as `data:image/png;base64,...` (abbreviated here, so send a complete image). Agents MUST NOT fetch image URLs. Image-capable agents MUST support PNG. JPEG and WebP are allowed only when advertised. Check the catalog's image support and limits before sending screenshots.
 
 Agents MUST validate image syntax, base64, and image content, including its claimed MIME type. Pass supported images through the backend's image-input mechanism. Never silently drop, truncate, or replace supplied context with a text approximation. Unsupported images and exceeded limits produce errors.
 
-The caller keeps a private mapping from action IDs to controls. For example, `north` maps to moving one tile north; `wait` maps to advancing one turn without moving. Tool names, credentials, executable code, and execution permissions stay with the caller. There is no global action vocabulary and no generated action arguments.
+The caller keeps a private mapping from action IDs to controls. For example, `north` maps to moving one tile north, and `wait` maps to advancing one turn without moving. Tool names, credentials, executable code, and execution permissions stay with the caller. There is no global action vocabulary and no generated action arguments.
 
 ### **Response**
 
@@ -190,7 +190,7 @@ Cache-Control: no-store
 {"id":"decision42","action":"north","confidence":0.71,"probabilities":{"north":0.71,"wait":0.22,"south":0.07}}
 ```
 
-An explicit backend refusal instead returns:
+An explicit backend refusal instead returns `null`, as in this example.
 
 ```http
 HTTP/1.1 200 OK
@@ -207,17 +207,17 @@ Cache-Control: no-store
 | `confidence` | OPTIONAL backend-provided number in [0,1] for the selected action. MUST be absent when `action` is null. |
 | `probabilities` | OPTIONAL object whose keys are exactly the offered action IDs, each with a backend-provided number in [0,1]. MUST be absent when `action` is null. |
 
-Agents providing these fields MUST advertise `"confidence": true` and/or `"probabilities": true` in their capability's `decision` metadata. Absent score metadata means the field is not provided. Values MUST come from the backend; agents MUST NOT fabricate or estimate them. If the backend supplies probabilities for only some actions, omit `probabilities` rather than inventing missing values. Values SHOULD approximately sum to 1 when the backend provides a full distribution; an exact sum of 1 is not required. Values are agent- and backend-specific and are not comparable across agents.
+Agents providing these fields MUST advertise `"confidence": true` and/or `"probabilities": true` in their capability's `decision` metadata. Absent score metadata means the field is not provided. Values MUST come from the backend. Agents MUST NOT fabricate or estimate them. If the backend supplies probabilities for only some actions, omit `probabilities` rather than inventing missing values. Values SHOULD approximately sum to 1 when the backend provides a full distribution, but an exact sum of 1 is not required. Values are agent- and backend-specific and are not comparable across agents.
 
 These are the only standard success fields. There are no explanations, provider metadata, reasoning traces, batches, callbacks, tool calls, or new session fields.
 
-Only an explicit provider refusal produces `null`. Agents MUST NOT add a hidden abstention choice or boolean sentinel, reserve a choice slot, or turn low confidence, timeouts, or failures into `null`. A selected `wait` is a real action; `null` selects nothing. The caller applies its fallback policy, such as pausing or obtaining fresh context, without treating null as a selected wait.
+Only an explicit provider refusal produces `null`. Agents MUST NOT add a hidden abstention choice or boolean sentinel, reserve a choice slot, or turn low confidence, timeouts, or failures into `null`. A selected `wait` is a real action, while `null` selects nothing. The caller applies its fallback policy, such as pausing or obtaining fresh context, without treating null as a selected wait.
 
-Agents MUST validate backend output before returning it, including exact action membership. The two-action minimum is a protocol rule, not a deployment setting. Maximum counts are deployment limits; RESTAP does not impose the reference deployment's 32-action limit on other agents.
+Agents MUST validate backend output before returning it, including exact action membership. The two-action minimum is a protocol rule, not a deployment setting. Maximum counts are deployment limits. RESTAP does not impose the reference deployment's 32-action limit on other agents.
 
 ### **Errors**
 
-Errors use a small JSON body, for example:
+Errors use a small JSON body, as in this example.
 
 ```http
 HTTP/1.1 400 Bad Request
@@ -248,7 +248,7 @@ Cache-Control: no-store
 | 503 | Backend unavailable, including transport, service, configuration, authentication, or provider quota/rate failure | `decision_backend_unavailable` |
 | 504 | Agent's backend deadline expires | `decision_timeout` |
 
-Errors MUST NOT contain a success-shaped action or expose provider bodies or credentials. A provider authentication failure is 503, not caller 401. Text, state, and events cannot be rejected as unsupported capabilities. Deployments SHOULD use a deterministic validation order; a request with several problems need not report them all.
+Errors MUST NOT contain a success-shaped action or expose provider bodies or credentials. A provider authentication failure is 503, not caller 401. Text, state, and events cannot be rejected as unsupported capabilities. Deployments SHOULD use a deterministic validation order. A request with several problems need not report them all.
 
 ### **Caller reliability rules**
 
@@ -257,7 +257,7 @@ Errors MUST NOT contain a success-shaped action or expose provider bodies or cre
 3. Before execution, the caller MUST check the echoed ID, action membership, current environment state, and current action legality. Discard stale choices and request a new decision with fresh context.
 4. The caller MUST accept at most one execution per ID. Atomically consume the ID before executing a selected control. A null response consumes the decision without executing a control.
 5. Retries of the same request may repeat inference and return different choices. Decision IDs do not guarantee exactly-once execution. If execution times out with an unknown outcome, the caller MUST reconcile with the environment or its idempotency facility before retrying the control.
-6. `action` remains THE decision; scores are informational. Executing anything other than `action` is the caller's own policy. The RECOMMENDED path is to request a fresh decision instead of choosing an alternative from the scores.
+6. `action` remains THE decision, and the scores are informational. Executing anything other than `action` is the caller's own policy. The RECOMMENDED path is to request a fresh decision instead of choosing an alternative from the scores.
 7. Capture the action's outcome in the next observation, for example `events: ["Moved one tile north."]` with a new state revision and ID.
 
 ## **Streaming /talk responses (optional)**
@@ -540,7 +540,7 @@ This example does not advertise decision support and remains compliant.
 
 ### **Optional decision catalog entry**
 
-An agent supporting decisions adds this entry to `capabilities`. This example uses the planned reference deployment limits; it is not an announcement that the current reference server implements `/decision`.
+An agent supporting decisions adds this entry to `capabilities`. This example uses the planned reference deployment limits. It is not an announcement that the current reference server implements `/decision`.
 
 ```json
 {
@@ -645,25 +645,25 @@ Each capability in the catalog can include the following standard REST API field
 * **output_formats**: Array of response formats the capability can produce (e.g., `["application/json", "text/event-stream"]`). On `talk`, listing `text/event-stream` signals that streaming is available via content negotiation.
 * **streaming**: For `talk`, an object advertising optional SSE streaming: `{ "supported": true, "transport": "sse", "events": ["message.start", "message.delta", "message.end", "error", "done"] }`. When `supported` is `false`, the server always returns `application/json`. The `events` array lists the SSE events the server emits.
 * **sessions**: For `talk`, an object advertising optional session continuity: `{ "supported": true }`. When `supported` is `true`, the server mints and returns a `session_id` that clients echo back to continue a thread (see **Sessions (optional)**). When `false`, the server is stateless and ignores `session_id`.
-* **decision**: Optional capability-local metadata (`decision?: DecisionAdvert`) for `decision`; see below. It is not a top-level `protocols` entry.
+* **decision**: Optional capability-local metadata (`decision?: DecisionAdvert`) for `decision`, described below. It is not a top-level `protocols` entry.
 
 The input/output schemas use standard JSON Schema format to provide precise API contracts for clients.
 
 ### **Decision metadata (optional)**
 
-The entire `decision` object and each of its seven fields are OPTIONAL, independently of one another. `DecisionAdvert` has no required fields. An omitted field means **not stated**: it supplies no fallback default, unlimited capacity, or support promise. For `confidence` and `probabilities`, absence means the score field is not provided. Do not infer missing metadata from another field.
+The entire `decision` object and each of its seven fields are OPTIONAL, independently of one another. `DecisionAdvert` has no required fields. An omitted field means **not stated**. It supplies no fallback default, unlimited capacity, or support promise. For `confidence` and `probabilities`, absence means the score field is not provided. Do not infer missing metadata from another field.
 
 | Field | Meaning and allowed value |
 | --- | --- |
-| `image_mime_types` | Array of supported image MIME types. Agents SHOULD publish it; omission neither promises nor denies image support. |
-| `max_images` | Maximum image count; nonnegative integer. |
-| `max_image_bytes` | Maximum bytes per decoded image; nonnegative integer, positive when images are supported. |
-| `max_request_bytes` | Maximum encoded JSON HTTP body bytes, including base64 overhead, excluding headers; positive integer. |
-| `max_actions` | Maximum offered action count; integer at least 2. It does not change the two-action minimum. |
-| `confidence` | Optional boolean; `true` advertises backend confidence for the selected action. Absent or false means not provided. |
-| `probabilities` | Optional boolean; `true` advertises backend probabilities for all offered actions when a complete distribution is available. Absent or false means not provided. |
+| `image_mime_types` | Array of supported image MIME types. Agents SHOULD publish it. Omitting it neither promises nor denies image support. |
+| `max_images` | Maximum image count, as a nonnegative integer. |
+| `max_image_bytes` | Maximum bytes per decoded image, as a nonnegative integer, positive when images are supported. |
+| `max_request_bytes` | Maximum encoded JSON HTTP body bytes, including base64 overhead and excluding headers, as a positive integer. |
+| `max_actions` | Maximum offered action count, as an integer of at least 2. It does not change the two-action minimum. |
+| `confidence` | Optional boolean. `true` advertises backend confidence for the selected action. Absent or false means not provided. |
+| `probabilities` | Optional boolean. `true` advertises backend probabilities for all offered actions when a complete distribution is available. Absent or false means not provided. |
 
-Published values MUST be accurate and enforced consistently with backend support. Unpublished limits may still apply: agents MUST reject over-limit requests with 413 or 422. A no-image agent can explicitly publish `image_mime_types: []`, `max_images: 0`, and `max_image_bytes: 0`; none is mandatory.
+Published values MUST be accurate and enforced consistently with backend support. Unpublished limits may still apply, and agents MUST reject over-limit requests with 413 or 422. A no-image agent can explicitly publish `image_mime_types: []`, `max_images: 0`, and `max_image_bytes: 0`, but none is mandatory.
 
 The reference deployment values shown above are PNG, 2 images, 5242880 decoded bytes per image, 8388608 encoded body bytes, and 32 actions. They are deployment defaults, not protocol constants or provider limits. Text, state, and events need no support flags because every decision agent MUST accept them.
 
@@ -908,7 +908,7 @@ This design ensures that:
 
 ## **For AI Agents**
 
-RESTAP enables AI agents to expose their capabilities in a standardized way. Agents MAY also advertise `/decision` to select among complete caller-supplied actions; the caller retains execution control:
+RESTAP enables AI agents to expose their capabilities in a standardized way. Agents MAY also advertise `/decision` to select among complete caller-supplied actions, while the caller retains execution control.
 
 1. **Publish capabilities** via `/.well-known/restap.json` for easy discovery
 2. **Handle conversations** through the `/talk` endpoint (one-directional: receive queries, trigger LLM responses)
@@ -931,4 +931,4 @@ This combination creates a complete ecosystem where AI agents can easily expose 
 
 ### **0.2.0-beta — specification stage**
 
-Adds the optional `/decision` contract; reference server support follows in later stages. Aligns current RESTAP version strings to `0.2.0-beta`, including discovery `restap_version`, previously `1.0`. This observable discovery change may affect strict clients: detect capabilities by ID rather than requiring version equality.
+Adds the optional `/decision` contract. Reference server support follows in later stages. Aligns current RESTAP version strings to `0.2.0-beta`, including discovery `restap_version`, previously `1.0`. This observable discovery change may affect strict clients, so detect capabilities by ID rather than requiring version equality.
