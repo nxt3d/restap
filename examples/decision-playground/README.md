@@ -253,3 +253,7 @@ OPENAI_API_KEY="$OPENAI_API_KEY" node examples/decision-playground/cockpit-compa
 ```
 
 The runner evaluates all 18 scenarios once in each of the three modes, seed 42, role on, two seconds between requests, no retries, at most 63 calls and a hard 399-call ceiling. It saves each response immediately. Errors remain separate from scored accuracy; consult the error count before interpreting results. The narrow fixed scenario bank is a recognition benchmark, not evidence of operational aviation competence.
+
+The cockpit trainer shows each RESTAP `/decision` exchange under the instruments: the local `POST /decide` status and elapsed time, request and response JSON, and a collapsed Backend (OpenAI Decisions) section. Image data URLs are shortened for display; Copy request and Copy response retain the full JSON. The history selector keeps earlier steps across runs for the current page session, and Export JSON includes those exchanges.
+
+Correct and acceptable choices display a green STEP PASSED banner; wrong and dangerous choices display amber FAIL and red DANGER banners with the correct action. Scenario dots track each checklist step, followed by a resolved or failed summary. Play-all holds the banner for 1.5 seconds after the instrument animation by default; the setup control adjusts this from 0.5 to 30 seconds.
