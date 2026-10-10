@@ -159,11 +159,11 @@ Accept: application/json
 | Field | Requirement |
 | --- | --- |
 | `id` | Required nonempty string identifying this exact observation and set of choices. |
-| `context` | Required object with content in at least one known field below. |
-| `context.text` | Optional string. Nonblank text counts as content. |
-| `context.images` | Optional array of inline base64 image data URLs. One valid image counts as content. |
-| `context.state` | Optional JSON object. At least one property counts as content. Nested objects, arrays, nulls, booleans, strings, and numbers are preserved. The field itself cannot be an array or null. |
-| `context.events` | Optional string array. At least one nonblank event counts as content. |
+| `context` | Required object. At least one of the four fields below must carry content, or the request is rejected with `empty_context`. |
+| `context.text` | Optional string: the objective, rules or a description of the situation. Text that isn't blank is enough on its own, so a text-only request is allowed. |
+| `context.images` | Optional list of screenshots as inline base64 data URLs. At least one valid image is enough on its own, so an image-only request is allowed. An empty list doesn't count. |
+| `context.state` | Optional JSON object of structured observations (positions, readings, inventory). At least one property is enough on its own, so a state-only request is allowed; `{}` doesn't count. Any nested JSON is passed through unchanged. `state` itself must be an object, not an array or null. |
+| `context.events` | Optional list of recent events and previous outcomes, as strings. At least one event that isn't blank is enough on its own, so an events-only request is allowed. |
 | `actions` | Required array of at least two complete choices. |
 | `actions[].id` | Required nonblank string, unique within the request by exact, case-sensitive equality. The literal `"null"` is forbidden. |
 | `actions[].description` | Required nonblank string explaining the action's parameters, duration, units, and effects. |
