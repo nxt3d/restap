@@ -1,0 +1,24 @@
+export const WIDTH=1200,HEIGHT=820;
+export function drawCockpit(c,g){const v=g.gauges;
+ const text=(t,x,y,size=15,color='#cdd5d8',align='left')=>{c.fillStyle=color;c.font=`${size}px monospace`;c.textAlign=align;c.fillText(String(t),x,y);};
+ const box=(x,y,w,h,color)=>{c.fillStyle=color;c.fillRect(x,y,w,h);};
+ const circle=(x,y,r,color)=>{c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.fillStyle=color;c.fill();};
+ c.clearRect(0,0,WIDTH,HEIGHT);const bg=c.createLinearGradient(0,0,0,HEIGHT);bg.addColorStop(0,'#343c40');bg.addColorStop(1,'#171d20');box(0,0,WIDTH,HEIGHT,bg);
+ for(const x of [12,1188])for(const y of [12,808]){circle(x,y,5,'#758086');box(x-3,y-1,6,2,'#202528');}
+ text('TWIN / INSTRUMENT PANEL',28,30,18);text('SIMULATED TRAINING • NOT REAL FLIGHT PROCEDURES',1170,30,13,'#aeb9be','right');
+ box(22,46,1156,48,'#101619');text(`${v.phase}   |   ${v.trend}`,36,66,14,'#edf2ef');text(`${v.note}   |   PITOT HEAT ${v.pitotHeat}`,36,86,13,'#c7d1d5');
+ const dial=(x,y,label,value,unit,min,max,normal)=>{circle(x,y,90,'#111618');circle(x,y,85,'#667076');circle(x,y,81,'#080d10');for(let i=0;i<=20;i++){const a=(135+i*13.5)*Math.PI/180;c.strokeStyle=i%5?'#647074':'#cad1cf';c.lineWidth=i%5?1:2;c.beginPath();c.moveTo(x+Math.cos(a)*69,y+Math.sin(a)*69);c.lineTo(x+Math.cos(a)*(i%5?75:79),y+Math.sin(a)*(i%5?75:79));c.stroke();if(i%5===0)text(Math.round(min+(max-min)*i/20),x+Math.cos(a)*55,y+Math.sin(a)*55+4,10,'#aeb8b9','center');}const a=(135+Math.min(1,Math.max(0,(value-min)/(max-min)))*270)*Math.PI/180;c.strokeStyle='#f0eee0';c.lineWidth=3;c.beginPath();c.moveTo(x,y);c.lineTo(x+Math.cos(a)*63,y+Math.sin(a)*63);c.stroke();circle(x,y,5,'#bfc7c5');text(label,x,y-26,12,'#f0f1e8','center');box(x-53,y+22,106,23,'#111c20');text(`${Math.round(value)} ${unit}`,x,y+39,16,normal?'#b5e1ce':'#f2ba7a','center');};
+ dial(125,204,'AIRSPEED',v.airspeed,'KT',0,240,v.airspeed>75&&v.airspeed<190);
+ // Attitude indicator: clipped moving sky/earth and bank reference.
+ const x=335,y=204;circle(x,y,90,'#101619');circle(x,y,85,'#667076');c.save();c.beginPath();c.arc(x,y,80,0,Math.PI*2);c.clip();c.translate(x,y);c.rotate(-v.bank*Math.PI/180);const horizon=v.pitch*2;box(-160,-180,320,180+horizon,'#315b74');box(-160,horizon,320,180,'#6c523b');box(-160,horizon-1,320,2,'#e7e4d1');for(let p=-20;p<=20;p+=10){box(-22,horizon+p*2,44,1,'#dbdfd2');}c.restore();c.strokeStyle='#f5cc57';c.lineWidth=4;c.beginPath();c.moveTo(x-48,y);c.lineTo(x-15,y);c.lineTo(x,y+7);c.lineTo(x+15,y);c.lineTo(x+48,y);c.stroke();text('ATTITUDE',x,y-56,12,'#fff','center');text(`P ${Math.round(v.pitch)}°  B ${Math.round(v.bank)}°`,x,y+60,13,'#fff','center');
+ dial(545,204,'ALTIMETER',v.altitude,'FT',0,20000,true);
+ dial(125,403,'TURN COORD',v.turn,'°/s',-3,3,Math.abs(v.turn)<1);text('L        R',125,466,11,'#cbd4d0','center');
+ dial(335,403,'HEADING',v.heading,'°',0,360,true);dial(545,403,'VERT SPEED',v.vsi,'FPM',-3000,3000,Math.abs(v.vsi)<1500);
+ text('ENGINE / SYSTEMS',665,122,15,'#eef0e6');text('ENGINE 1',869,149,12,'#adb9bc','center');text('ENGINE 2',1057,149,12,'#adb9bc','center');
+ const bar=(label,a,b,unit,max,row,ok)=>{const y=170+row*44;text(label,665,y+16,12);for(const [val,x] of [[a,790],[b,978]]){box(x,y,172,30,'#101719');box(x,y+26,Math.max(0,Math.min(172,172*val/max)),4,ok(val)?'#7ea98d':'#d88c5e');text(`${Math.round(val)} ${unit}`,x+86,y+19,17,ok(val)?'#dde5dc':'#ffc584','center');}};
+ bar('RPM',v.rpm1,v.rpm2,'',3000,0,n=>n>=2000&&n<2700);bar('OIL P',v.oilP1,v.oilP2,'PSI',100,1,n=>n>=45&&n<=90);bar('OIL T',v.oilT1,v.oilT2,'°F',320,2,n=>n<230);bar('FUEL FLOW',v.flow1,v.flow2,'GPH',30,3,n=>n>=8&&n<=18);bar('FUEL QTY',v.fuel1,v.fuel2,'GAL',60,4,n=>n>20);bar('FUEL P',v.fuelP1,v.fuelP2,'PSI',35,5,n=>n>15);
+ box(662,447,496,58,'#101719');text(`${v.amps} A     ${v.volts} V     VAC ${v.vacuum} inHg`,681,470,16);text(`CABIN ${Math.round(v.cabin)} FT       FLAPS ${v.flaps}°`,681,494,16,v.cabin>10000?'#ffc584':'#cdd5d8');
+ box(26,510,609,55,'#111719');text('LANDING GEAR',43,533,13);for(let i=0;i<3;i++){circle(245+i*92,535,10,v.gear===3?'#71cc88':'#28342d');text(['LEFT','NOSE','RIGHT'][i],245+i*92,557,10,'#aeb9bc','center');}text(v.gear===3?'DOWN':'UP / UNVERIFIED',617,533,12,'#cdd5d8','right');
+ text('ANNUNCIATORS',30,597,14);const lights=['STALL','ENG FIRE 1','ENG FIRE 2','LOW OIL P 1','LOW OIL P 2','FUEL IMBAL','ALT FAIL','GEAR','CABIN ALT','PITOT HEAT OFF','INDUCT ICE','OVERSPEED','VACUUM','ELEC SMOKE','DOOR','FUEL PUMP 1','FUEL PUMP 2','ENG 1 FAIL','UNSTABLE'];lights.forEach((label,i)=>{const x=28+(i%5)*232,y=612+Math.floor(i/5)*44,active=v.lights.includes(label);box(x,y,220,34,active?(label.includes('FIRE')||['STALL','UNSTABLE'].includes(label)?'#aa3027':'#b97d26'):'#232b2e');text(label,x+110,y+22,13,active?'#fff5dd':'#657074','center');});
+ text('REFERENCE: IAS 80–190 KT · OIL 45–90 PSI / <230°F · BUS 27–29 V · CABIN <10,000 FT',30,803,12,'#afb9b7');
+}

@@ -233,3 +233,23 @@ The runner reads only `OPENAI_API_KEY` for this opt-in command. Ordinary tests
 remain mocked. The output checkpoints each attempt and includes per-game
 metrics, traces, call counts, latency, and planner results. The UI also exports
 completed/reset game results as JSON.
+
+### Cockpit trainer
+
+Open `/cockpit.html` for a turn-based fictional light-twin instrument-recognition exercise. This is **not real flight instruction or an aircraft checklist**. It adds no protocol contract changes.
+
+The canvas contains the six primary instruments, paired engine gauges, tank quantities, electrical and vacuum readings, fuel pressures, cabin altitude, flaps, gear lights, and annunciators. Sensory observations and trends are printed on the panel so image-only and state-only inputs receive the same evidence. Scenario names, grading, and explanations appear only after the response and never enter the canvas or decision context.
+
+There are 15 fault scenarios and three normal/ambiguous controls. Seeded variants change heading, altitude, and tank quantities; action order and optional scenario shuffle are also deterministic. Each checklist takes one or two decisions (21 maximum per full run). Every step offers six unfiltered actions with an explicit correct/acceptable/wrong/dangerous grade. A wrong response ends the scenario with visible deterioration; a correct response advances five simulated seconds and stabilizes the relevant indications. These transitions are illustrative, not flight dynamics.
+
+Select images, state, or both; toggle A for the single-line pilot role; choose Step or Play all scenarios. Pause finishes an in-flight decision, then stops. Changing settings starts a new run while retaining prior result rows. Results group by input mode; exported JSON preserves seed, mode, per-step grades, reported confidence/probabilities, latency, and errors. First-action accuracy accepts correct or acceptable responses. `null` is acceptable on control panels and wrong on faults. Confidence summaries include all scored steps and omit missing confidence. Cost remains unavailable when no provider `usage.cost_usd` is supplied. No token-price estimate is invented.
+
+The opt-in evaluation uses the same renderer and adapter as the page. Provide a locally installed `@napi-rs/canvas` module path; no canvas dependency is added to the server:
+
+```sh
+OPENAI_API_KEY="$OPENAI_API_KEY" node examples/decision-playground/cockpit-compare.js \
+  --live --output /absolute/path/outside/repo/cockpit-results.json \
+  --canvas-module /absolute/path/to/@napi-rs/canvas/index.js
+```
+
+The runner evaluates all 18 scenarios once in each of the three modes, seed 42, role on, two seconds between requests, no retries, at most 63 calls and a hard 399-call ceiling. It saves each response immediately. Errors remain separate from scored accuracy; consult the error count before interpreting results. The narrow fixed scenario bank is a recognition benchmark, not evidence of operational aviation competence.
